@@ -1,15 +1,18 @@
-# Prompt for deciding: attach to existing dispute or create new
+# Prompt for intent classification
 INTENT_CLASSIFICATION_PROMPT = """
 You are an accounts-payable analyst.
 
-Classify the email into one of:
-- DISPUTE: raises a billing, invoice, payment, or financial issue
-- NOT_DISPUTE: informational, greetings, scheduling, acknowledgements
-- AMBIGUOUS: unclear whether a dispute exists
+Classify the email.
+
+Definitions:
+- DISPUTE: clearly raises a billing, invoice, or payment issue
+- NOT_DISPUTE: greetings, updates, acknowledgements, non-financial
+
+Also provide a confidence score between 0 and 1.
 
 Rules:
-- If unsure, choose AMBIGUOUS
-- Do not invent information
+- If an invoice is mentioned but the issue is unclear, use confidence ≤ 0.6
+- Be conservative; avoid false positives
 
 EMAIL:
 Subject: {subject}
@@ -17,15 +20,17 @@ Body:
 {body}
 
 Respond ONLY in JSON:
-{
-  "intent": "DISPUTE | NOT_DISPUTE | AMBIGUOUS",
+{{
+  "intent": "DISPUTE | NOT_DISPUTE",
+  "confidence_score": 0.0,
   "reason": "short explanation"
-}
+}}
 """
 
 
 
 
+# Prompt for clarification email
 CLARIFICATION_PROMPT = """
 Write a polite clarification email asking the sender to confirm
 whether their message relates to an invoice, payment, or billing issue.
@@ -39,7 +44,7 @@ Body:
 
 
 
-
+# Prompt for deciding: attach to existing dispute or create new
 DECISION_PROMPT = """
 You are an expert accounts-payable dispute analyst.
 
@@ -71,7 +76,7 @@ Respond ONLY in valid JSON with this schema:
 
 
 
-
+# Prompt for dispute summary generation
 SUMMARY_PROMPT = """
 You are an accounts-payable analyst.
 

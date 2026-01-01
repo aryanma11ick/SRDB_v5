@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
@@ -64,6 +64,7 @@ class Email(Base):
 
     intent_status: Mapped[Optional[str]] = mapped_column(Text)
     intent_reason: Mapped[Optional[str]] = mapped_column(Text)
+    intent_confidence: Mapped[Optional[float]] = mapped_column(Float)
 
     dispute: Mapped[Optional["Dispute"]] = relationship(back_populates="emails")
     supplier: Mapped["Supplier"] = relationship(back_populates="emails")
