@@ -1,29 +1,19 @@
 import uuid
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
     ForeignKey,
-    String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
-
-try:  # pragma: no cover - runtime path
-    from sqlalchemy.dialects.postgresql import VECTOR  # type: ignore
-except Exception:  # Fallback if pgvector dialect isn't available
-    from sqlalchemy import types as _types  # type: ignore
-
-    class VECTOR(_types.TypeEngine):  # type: ignore
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            super().__init__()
+from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
+
 
 class Supplier(Base):
     __tablename__ = "suppliers"
@@ -36,6 +26,7 @@ class Supplier(Base):
     disputes = relationship("Dispute", back_populates="supplier")
     emails = relationship("Email", back_populates="supplier")
 
+
 class Dispute(Base):
     __tablename__ = "disputes"
 
@@ -43,11 +34,12 @@ class Dispute(Base):
     supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"))
     status = Column(Text, default="OPEN")
     summary = Column(Text)
-    summary_embedding = Column(VECTOR(1024))
+    summary_embedding = Column(Vector(1024))
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     supplier = relationship("Supplier", back_populates="disputes")
     emails = relationship("Email", back_populates="dispute")
+
 
 class Email(Base):
     __tablename__ = "emails"
@@ -57,12 +49,13 @@ class Email(Base):
     supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"))
     subject = Column(Text)
     body = Column(Text)
-    embedding = Column(VECTOR(1024))
+    embedding = Column(Vector(1024))
     gmail_message_id = Column(Text, unique=True)
     received_at = Column(DateTime(timezone=True), default=datetime.utcnow)
 
     dispute = relationship("Dispute", back_populates="emails")
     supplier = relationship("Supplier", back_populates="emails")
+
 
 class ProcessedGmailMessage(Base):
     __tablename__ = "processed_gmail_messages"

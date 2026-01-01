@@ -1,22 +1,31 @@
 # Prompt for deciding: attach to existing dispute or create new
 DECISION_PROMPT = """
-You are an expert procurement dispute classifier.
+You are an expert accounts-payable dispute analyst.
 
-Analyze the new email and compare it to the list of existing open disputes for this supplier.
+Your task:
+Decide whether the NEW EMAIL belongs to one of the EXISTING DISPUTES.
 
-Existing open disputes (if any):
-{context}
+Rules:
+- If the email is a continuation of the same issue (same invoice, same amounts, same problem), choose MATCH.
+- If it is about a different invoice, a different issue, or a clearly new problem, choose NEW.
+- If unsure, choose NEW.
+- Do NOT invent facts.
+- Base your decision only on the text provided.
 
-New email:
+EXISTING DISPUTES:
+{disputes}
+
+NEW EMAIL:
 Subject: {subject}
-Body: {body}
+Body:
+{body}
 
-Instructions:
-- If the new email clearly relates to or continues one of the existing open disputes, respond with ONLY the dispute ID (UUID).
-- If it's about a new issue or doesn't match any existing dispute, respond exactly with "NEW".
-- Do not explain. Do not add any extra text. Respond with a single line only.
-
-Your response:
+Respond ONLY in valid JSON with this schema:
+{{
+  "action": "MATCH" or "NEW",
+  "dispute_id": "<dispute_id or null>",
+  "reason": "one short sentence"
+}}
 """
 
 # Prompt for regenerating the dispute summary after adding a new email
