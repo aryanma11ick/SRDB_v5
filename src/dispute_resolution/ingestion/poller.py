@@ -1,6 +1,10 @@
 import asyncio
 from dispute_resolution.database import AsyncSessionLocal
-from dispute_resolution.ingestion.gmail_client import get_gmail_service
+from dispute_resolution.ingestion.gmail_client import (
+    get_gmail_service,
+    ensure_labels,
+    modify_message_labels,
+)
 from dispute_resolution.ingestion.processor import process_message
 from dispute_resolution.utils.logging import logger
 
@@ -15,6 +19,7 @@ async def _poll_async(max_results: int = 10) -> None:
     Fetch recent Gmail messages and pass them to the processor.
     """
     service = get_gmail_service()
+    label_map = ensure_labels(service)
 
     result = service.users().messages().list(
         userId="me",
@@ -44,7 +49,7 @@ async def _poll_async(max_results: int = 10) -> None:
                     f"Snippet={msg.get('snippet', '')[:80]}"
                 )
 
-            await process_message(db, service, msg)
+            await process_message(db, service, label_map, msg)
 
 
 def poll(max_results: int = 10) -> None:

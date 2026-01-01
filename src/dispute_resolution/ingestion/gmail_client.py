@@ -6,11 +6,23 @@ from googleapiclient.discovery import build
 
 TOKEN_FILE = Path("token.pickle")
 
-LABELS = {
-    "processed": "Processed",
-    "dispute": "Dispute",
-    "not_dispute": "Not Dispute",
-    "ambiguous": "Needs Clarification",
+REQUIRED_LABELS = {
+    "Processed": {
+        "labelListVisibility": "labelShow",
+        "messageListVisibility": "show",
+    },
+    "Dispute": {
+        "labelListVisibility": "labelShow",
+        "messageListVisibility": "show",
+    },
+    "Not_Dispute": {
+        "labelListVisibility": "labelShow",
+        "messageListVisibility": "hide",
+    },
+    "Needs_Clarification": {
+        "labelListVisibility": "labelShow",
+        "messageListVisibility": "show",
+    },
 }
 
 
@@ -61,30 +73,45 @@ def fetch_and_print_one_email():
     print("Message ID:", msg_id)
 
 
-def ensure_label(service, label_name: str) -> str:
+def ensure_labels(service) -> dict[str, str]:
     """
-    Ensure a Gmail label exists. Returns labelId.
+    Ensure required Gmail labels exist.
+    Returns: {label_name: label_id}
     """
-    labels = service.users().labels().list(userId="me").execute()["labels"]
+    existing = service.users().labels().list(userId="me").execute()
+    label_map = {l["name"]: l["id"] for l in existing.get("labels", [])}
 
-    for label in labels:
-        if label["name"] == label_name:
-            return label["id"]
+    for name, config in REQUIRED_LABELS.items():
+        if name not in label_map:
+            label = (
+                service.users()
+                .labels()
+                .create(
+                    userId="me",
+                    body={
+                        "name": name,
+                        "type": "user",
+                        **config,
+                    },
+                )
+                .execute()
+            )
+            label_map[name] = label["id"]
 
-    label = service.users().labels().create(
-        userId="me",
-        body={
-            "name": label_name,
-            "labelListVisibility": "labelShow",
-            "messageListVisibility": "show",
-        },
-    ).execute()
+    return label_map
 
-    return label["id"]
-
-def add_labels(service, message_id: str, label_ids: list[str]) -> None:
+def modify_message_labels(
+    service,
+    *,
+    message_id: str,
+    add: list[str],
+    remove: list[str] | None = None,
+):
     service.users().messages().modify(
         userId="me",
         id=message_id,
-        body={"addLabelIds": label_ids},
+        body={
+            "addLabelIds": add,
+            "removeLabelIds": remove or [],
+        },
     ).execute()
