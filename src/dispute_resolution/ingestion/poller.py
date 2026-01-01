@@ -5,7 +5,12 @@ from dispute_resolution.ingestion.processor import process_message
 from dispute_resolution.utils.logging import logger
 
 
-async def _poll_async(max_results: int = 20) -> None:
+DRY_RUN = False
+
+GMAIL_QUERY = "is:unread newer_than:3d"
+
+
+async def _poll_async(max_results: int = 10) -> None:
     """
     Fetch recent Gmail messages and pass them to the processor.
     """
@@ -13,6 +18,7 @@ async def _poll_async(max_results: int = 20) -> None:
 
     result = service.users().messages().list(
         userId="me",
+        q=GMAIL_QUERY,
         maxResults=max_results,
     ).execute()
 
@@ -20,6 +26,8 @@ async def _poll_async(max_results: int = 20) -> None:
     if not messages:
         logger.info("No new emails found")
         return
+
+    logger.info(f"Fetched {len(messages)} Gmail messages")
 
     async with AsyncSessionLocal() as db:
         for m in messages:
@@ -29,16 +37,24 @@ async def _poll_async(max_results: int = 20) -> None:
                 format="full",
             ).execute()
 
-            await process_message(db, msg)
+            if DRY_RUN:
+                logger.info(
+                    f"[DRY RUN] Processing email "
+                    f"ID={m['id']} | "
+                    f"Snippet={msg.get('snippet', '')[:80]}"
+                )
+
+            await process_message(db, service, msg)
 
 
-def poll(max_results: int = 20) -> None:
+def poll(max_results: int = 10) -> None:
     asyncio.run(_poll_async(max_results))
 
 
 def main():
     """
-    Minimal CLI entrypoint: `python -m dispute_resolution.ingestion.poller --max-results 10`
+    Minimal CLI entrypoint:
+    python -m dispute_resolution.ingestion.poller --max-results 5
     """
     import argparse
 
@@ -46,8 +62,8 @@ def main():
     parser.add_argument(
         "--max-results",
         type=int,
-        default=20,
-        help="How many recent messages to fetch (default: 20)",
+        default=10,
+        help="How many recent messages to fetch (default: 10)",
     )
     args = parser.parse_args()
 

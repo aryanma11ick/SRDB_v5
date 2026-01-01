@@ -6,6 +6,13 @@ from googleapiclient.discovery import build
 
 TOKEN_FILE = Path("token.pickle")
 
+LABELS = {
+    "processed": "Processed",
+    "dispute": "Dispute",
+    "not_dispute": "Not Dispute",
+    "ambiguous": "Needs Clarification",
+}
+
 
 def get_gmail_service():
     """
@@ -52,3 +59,32 @@ def fetch_and_print_one_email():
     print("From   :", sender)
     print("Subject:", subject)
     print("Message ID:", msg_id)
+
+
+def ensure_label(service, label_name: str) -> str:
+    """
+    Ensure a Gmail label exists. Returns labelId.
+    """
+    labels = service.users().labels().list(userId="me").execute()["labels"]
+
+    for label in labels:
+        if label["name"] == label_name:
+            return label["id"]
+
+    label = service.users().labels().create(
+        userId="me",
+        body={
+            "name": label_name,
+            "labelListVisibility": "labelShow",
+            "messageListVisibility": "show",
+        },
+    ).execute()
+
+    return label["id"]
+
+def add_labels(service, message_id: str, label_ids: list[str]) -> None:
+    service.users().messages().modify(
+        userId="me",
+        id=message_id,
+        body={"addLabelIds": label_ids},
+    ).execute()
