@@ -2,7 +2,7 @@ import json
 from dispute_resolution.llm.client import llm
 from dispute_resolution.llm.prompts import INTENT_CLASSIFICATION_PROMPT
 from dispute_resolution.utils.logging import logger
-
+from dispute_resolution.utils.llm import normalize_llm_content
 
 def _extract_json(text: str) -> str:
     text = text.strip()
@@ -29,7 +29,7 @@ def classify_intent(subject: str, body: str) -> dict:
     logger.info("Calling LLM intent classification")
 
     response = llm.invoke(prompt)
-    raw = response.content
+    raw = normalize_llm_content(response.content).strip()
     clean = _extract_json(raw)
 
     try:

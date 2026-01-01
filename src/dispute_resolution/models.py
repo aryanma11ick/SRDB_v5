@@ -1,65 +1,78 @@
 import uuid
 from datetime import datetime
+from typing import List, Optional
 
-from sqlalchemy import (
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Text,
-)
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Supplier(Base):
     __tablename__ = "suppliers"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(Text, nullable=False)
-    domain = Column(Text, nullable=False, unique=True)
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    domain: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    disputes = relationship("Dispute", back_populates="supplier")
-    emails = relationship("Email", back_populates="supplier")
+    disputes: Mapped[List["Dispute"]] = relationship(back_populates="supplier")
+    emails: Mapped[List["Email"]] = relationship(back_populates="supplier")
 
 
 class Dispute(Base):
     __tablename__ = "disputes"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"))
-    status = Column(Text, default="OPEN")
-    summary = Column(Text)
-    summary_embedding = Column(Vector(1024))
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="CASCADE"),
+    )
+    status: Mapped[str] = mapped_column(Text, default="OPEN")
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    summary_embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1024))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
-    supplier = relationship("Supplier", back_populates="disputes")
-    emails = relationship("Email", back_populates="dispute")
+    supplier: Mapped["Supplier"] = relationship(back_populates="disputes")
+    emails: Mapped[List["Email"]] = relationship(back_populates="dispute")
 
+
+from typing import Optional
 
 class Email(Base):
     __tablename__ = "emails"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    dispute_id = Column(UUID(as_uuid=True), ForeignKey("disputes.id", ondelete="CASCADE"))
-    supplier_id = Column(UUID(as_uuid=True), ForeignKey("suppliers.id", ondelete="CASCADE"))
-    subject = Column(Text)
-    body = Column(Text)
-    embedding = Column(Vector(1024))
-    gmail_message_id = Column(Text, unique=True)
-    received_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dispute_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("disputes.id", ondelete="CASCADE"),
+    )
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="CASCADE"),
+    )
 
-    dispute = relationship("Dispute", back_populates="emails")
-    supplier = relationship("Supplier", back_populates="emails")
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1024))
+    gmail_message_id: Mapped[str] = mapped_column(Text, unique=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+    intent_status: Mapped[Optional[str]] = mapped_column(Text)
+    intent_reason: Mapped[Optional[str]] = mapped_column(Text)
+
+    dispute: Mapped[Optional["Dispute"]] = relationship(back_populates="emails")
+    supplier: Mapped["Supplier"] = relationship(back_populates="emails")
+
 
 
 class ProcessedGmailMessage(Base):
     __tablename__ = "processed_gmail_messages"
 
-    gmail_message_id = Column(Text, primary_key=True)
-    processed_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    was_dispute = Column(Boolean, nullable=False, default=False)
+    gmail_message_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    was_dispute: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

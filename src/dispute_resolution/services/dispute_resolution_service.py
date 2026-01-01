@@ -10,8 +10,9 @@ async def resolve_email(
     *,
     db: AsyncSession,
     email: Email,
-    candidate_disputes: list[dict],  # from vector search
+    candidate_disputes: list[dict],
 ):
+    # ✅ USE INSTANCE ATTRIBUTES
     decision = decide_dispute(
         subject=email.subject,
         body=email.body,
@@ -42,7 +43,7 @@ async def resolve_email(
     )
 
     db.add(dispute)
-    await db.flush()  # get dispute.id
+    await db.flush()  # populate dispute.id
 
     email.dispute_id = dispute.id
     await db.commit()
