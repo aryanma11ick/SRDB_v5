@@ -1,5 +1,4 @@
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import OllamaEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 from ..config import settings
 
 # LLM for reasoning, decision-making, summarization

@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dispute_resolution.ingestion.message_parser import parse_gmail_message
 from dispute_resolution.models import Email, ProcessedGmailMessage
 from dispute_resolution.utils.logging import logger
-from ..services.supplier_service import get_supplier_by_domain
+from dispute_resolution.services.supplier_service import get_supplier_by_domain
+from dispute_resolution.services.embedding_service import embed_email
 
 
 def _extract_domain(from_header: str) -> str | None:
@@ -17,6 +18,7 @@ async def process_message(db: AsyncSession, gmail_message: dict) -> None:
     Process a single Gmail message:
     - idempotency check
     - supplier lookup
+    - generate embedding
     - store email
     - mark as processed
     """
@@ -41,17 +43,24 @@ async def process_message(db: AsyncSession, gmail_message: dict) -> None:
         logger.info(f"Unknown supplier domain '{domain}', skipping")
         return
 
-    # 3. Insert email (no dispute yet)
+    # 3. Generate embedding (NEW)
+    embedding = embed_email(
+        subject=parsed["subject"],
+        body=parsed["body"],
+    )
+
+    # 4. Insert email with embedding
     email = Email(
         supplier_id=supplier.id,
         dispute_id=None,
         subject=parsed["subject"],
         body=parsed["body"],
+        embedding=embedding,
         gmail_message_id=gmail_id,
     )
     db.add(email)
 
-    # 4. Mark Gmail message as processed
+    # 5. Mark Gmail message as processed
     db.add(
         ProcessedGmailMessage(
             gmail_message_id=gmail_id,
@@ -60,4 +69,4 @@ async def process_message(db: AsyncSession, gmail_message: dict) -> None:
     )
 
     await db.commit()
-    logger.info(f"Ingested email {gmail_id} for supplier {supplier.name}")
+    logger.info(f"Ingested + embedded email {gmail_id} for supplier {supplier.name}")
