@@ -5,6 +5,23 @@ from dispute_resolution.llm.client import llm
 from dispute_resolution.llm.prompts import DECISION_PROMPT
 from dispute_resolution.utils.logging import logger
 
+def _normalize_llm_content(content: Any) -> str:
+    """
+    Normalize LangChain LLM content into a string.
+    """
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item))
+        return "\n".join(parts)
+
+    return str(content)
 
 def _format_disputes(disputes: List[Dict[str, Any]]) -> str:
     """
@@ -16,6 +33,19 @@ def _format_disputes(disputes: List[Dict[str, Any]]) -> str:
             f"Dispute ID: {d['id']}\nSummary: {d['summary']}"
         )
     return "\n\n".join(blocks)
+
+def _extract_json(text: str) -> str:
+    """
+    Removes markdown code fences if present.
+    """
+    text = text.strip()
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # remove first ```json / ``` line and last ```
+        text = "\n".join(lines[1:-1]).strip()
+
+    return text
 
 
 def decide_dispute(
@@ -44,13 +74,14 @@ def decide_dispute(
     response = llm.invoke(prompt)
 
     # LangChain returns an AIMessage
-    content = response.content.strip()
+    raw = _normalize_llm_content(response.content).strip()
+    clean = _extract_json(raw)
 
     try:
-        decision = json.loads(content)
+        decision = json.loads(clean)
     except json.JSONDecodeError:
         logger.error("LLM returned non-JSON response")
-        logger.error(content)
+        logger.error(clean)
         # Safe fallback
         return {
             "action": "NEW",

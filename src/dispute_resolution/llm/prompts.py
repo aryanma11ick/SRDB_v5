@@ -1,4 +1,45 @@
 # Prompt for deciding: attach to existing dispute or create new
+INTENT_CLASSIFICATION_PROMPT = """
+You are an accounts-payable analyst.
+
+Classify the email into one of:
+- DISPUTE: raises a billing, invoice, payment, or financial issue
+- NOT_DISPUTE: informational, greetings, scheduling, acknowledgements
+- AMBIGUOUS: unclear whether a dispute exists
+
+Rules:
+- If unsure, choose AMBIGUOUS
+- Do not invent information
+
+EMAIL:
+Subject: {subject}
+Body:
+{body}
+
+Respond ONLY in JSON:
+{
+  "intent": "DISPUTE | NOT_DISPUTE | AMBIGUOUS",
+  "reason": "short explanation"
+}
+"""
+
+
+
+
+CLARIFICATION_PROMPT = """
+Write a polite clarification email asking the sender to confirm
+whether their message relates to an invoice, payment, or billing issue.
+Ask for invoice number if applicable.
+
+Original Email:
+Subject: {subject}
+Body:
+{body}
+"""
+
+
+
+
 DECISION_PROMPT = """
 You are an expert accounts-payable dispute analyst.
 
@@ -28,20 +69,23 @@ Respond ONLY in valid JSON with this schema:
 }}
 """
 
-# Prompt for regenerating the dispute summary after adding a new email
+
+
+
 SUMMARY_PROMPT = """
-You are an expert in supplier dispute management.
+You are an accounts-payable analyst.
 
-Summarize the entire dispute thread concisely in 3-5 sentences.
+Write a concise dispute summary (2–4 sentences) based on the email below.
+Focus on:
+- the issue type
+- invoice number (if present)
+- amounts (if present)
+- what action is requested
 
-Include:
-- The main issue
-- Key claims from supplier and your company
-- Current status
-- Important dates or amounts if relevant
+Do NOT invent information.
 
-Thread (chronological):
-{thread}
-
-Summary:
+EMAIL:
+Subject: {subject}
+Body:
+{body}
 """
