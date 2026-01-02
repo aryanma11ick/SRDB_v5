@@ -153,3 +153,22 @@ Subject: {subject}
 Body:
 {body}
 """
+
+
+
+DISPUTE_CANONICAL_SUMMARY_PROMPT = """
+You are maintaining a canonical dispute record.
+
+Below are multiple emails exchanged regarding the SAME dispute.
+Your task is to produce a single, concise, factual dispute summary.
+
+Rules:
+- Consolidate information across all emails
+- Resolve partial information if clarified later
+- Do NOT speculate
+- Mention invoice numbers, PO numbers, amounts ONLY if explicitly stated
+- Keep the summary suitable for internal accounting and audit teams
+
+Emails:
+{body}
+"""
