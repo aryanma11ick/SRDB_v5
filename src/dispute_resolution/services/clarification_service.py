@@ -1,40 +1,48 @@
-from typing import Any
+import json
+from typing import Any, Dict
 from dispute_resolution.llm.client import llm
 from dispute_resolution.llm.prompts import EXTRACT_AND_CLARIFY_PROMPT
 from dispute_resolution.utils.llm import normalize_llm_content
 
 
-def _normalize_llm_content(content: Any) -> str:
+def extract_facts_and_clarification(subject: str, body: str) -> Dict[str, Any]:
     """
-    LangChain may return str | list[str] | list[dict].
-    Convert everything into a single string safely.
+    Returns structured extraction + optional clarification email.
+
+    {
+      "facts": {
+        "invoice_numbers": [...],
+        "amounts": [...],
+        "issue_type": "...",
+        "desired_action": "...",
+        "missing_info": [...]
+      },
+      "email_body": "clarification text or empty string"
+    }
     """
-    if isinstance(content, str):
-        return content
 
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                parts.append(str(item))
-        return "\n".join(parts)
-
-    return str(content)
-
-
-def generate_clarification_email(subject: str, body: str) -> str:
     response = llm.invoke(
         EXTRACT_AND_CLARIFY_PROMPT.format(subject=subject, body=body)
     )
 
-    text = normalize_llm_content(response.content).strip()
+    raw = normalize_llm_content(response.content).strip()
 
-    # Safety guard: remove markdown or bullet options if hallucinated
-    forbidden_markers = ["Option", "Explanation", "**", "Here are"]
-    for marker in forbidden_markers:
-        if marker in text:
-            text = text.split(marker)[0].strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # SAFETY FALLBACK
+        return {
+            "facts": {
+                "invoice_numbers": [],
+                "amounts": [],
+                "issue_type": "UNCLEAR",
+                "desired_action": "UNCLEAR",
+                "missing_info": [],
+            },
+            "email_body": "",
+        }
 
-    return text
+    return {
+        "facts": data.get("extracted_facts", {}),
+        "email_body": data.get("email_body", "").strip(),
+    }

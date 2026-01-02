@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from dispute_resolution.models import Email, Dispute
 from dispute_resolution.services.intent_service import classify_intent
-from dispute_resolution.services.clarification_service import generate_clarification_email
+from dispute_resolution.services.clarification_service import extract_facts_and_clarification
 from dispute_resolution.services.embedding_service import embed_email
 from dispute_resolution.services.vector_search_service import find_candidate_disputes
 from dispute_resolution.services.decision_service import decide_dispute
@@ -21,13 +21,16 @@ async def resolve_email(
 ) -> dict | None:
     """
     Returns:
-    - MATCH / NEW / CLARIFICATION_SENT / WAITING
+    - MATCH
+    - NEW
+    - CLARIFICATION_SENT
+    - WAITING
     - None → NOT_DISPUTE
     """
 
-    # -------------------------------------------------
-    # 0. THREAD SHORT-CIRCUIT (existing dispute)
-    # -------------------------------------------------
+    # =================================================
+    # 0. THREAD SHORT-CIRCUIT (already a dispute)
+    # =================================================
     if email.thread_id:
         ctx = await get_thread_context(
             db=db,
@@ -50,9 +53,9 @@ async def resolve_email(
                 "reason": "Thread already linked to dispute",
             }
 
-    # -------------------------------------------------
+    # =================================================
     # 1. INTENT CLASSIFICATION
-    # -------------------------------------------------
+    # =================================================
     intent = classify_intent(
         subject=email.subject,
         body=email.body,
@@ -63,19 +66,19 @@ async def resolve_email(
     email.intent_reason = intent["reason"]
     await db.flush()
 
-    # -------------------------------------------------
+    # =================================================
     # 2. NOT A DISPUTE
-    # -------------------------------------------------
+    # =================================================
     if intent["intent"] == "NOT_DISPUTE":
         await db.commit()
         return None
 
-    # -------------------------------------------------
-    # 3. AMBIGUOUS → CLARIFICATION (THREAD-LEVEL)
-    # -------------------------------------------------
+    # =================================================
+    # 3. AMBIGUOUS → ALWAYS CLARIFY
+    # =================================================
     if intent["intent"] == "AMBIGUOUS":
 
-        # ---- Thread-level guard: has clarification already been sent? ----
+        # ---- Thread-level guard ----
         if email.thread_id:
             existing = await db.execute(
                 select(Email).where(
@@ -90,34 +93,42 @@ async def resolve_email(
                     "reason": "Clarification already sent for this thread",
                 }
 
-        # ---- Generate clarification ----
-        clarification = generate_clarification_email(
+        # ---- Extraction ONLY for wording ----
+        extraction = extract_facts_and_clarification(
             subject=email.subject,
             body=email.body,
         )
 
-        # ---- Send reply (thread-safe) ----
+        clarification_text = extraction.get("email_body")
+
+        # Deterministic fallback (guaranteed)
+        if not clarification_text:
+            clarification_text = (
+                "We’ve reviewed your message and would like to understand "
+                "the issue in more detail. Please clarify what action you "
+                "would like us to take so we can proceed."
+            )
+
         send_reply(
             service=gmail_service,
             to=sender,
             subject=f"Re: {email.subject}",
-            body=clarification,
-            thread_id=email.thread_id,      # OK if None
+            body=clarification_text,
+            thread_id=email.thread_id,
             in_reply_to=email.gmail_message_id,
         )
 
-        # ---- Persist state ----
         email.clarification_sent = True
         await db.commit()
 
         return {
             "action": "CLARIFICATION_SENT",
-            "reason": "Awaiting supplier response",
+            "reason": "Intent ambiguous",
         }
 
-    # -------------------------------------------------
-    # 4. DISPUTE PATH
-    # -------------------------------------------------
+    # =================================================
+    # 4. DISPUTE PATH (ONLY FOR DISPUTE)
+    # =================================================
     email.embedding = embed_email(
         subject=email.subject,
         body=email.body,
@@ -141,17 +152,17 @@ async def resolve_email(
         )
     )
 
-    # -------------------------------------------------
-    # 4a. MATCH
-    # -------------------------------------------------
+    # =================================================
+    # 4a. MATCH EXISTING DISPUTE
+    # =================================================
     if decision["action"] == "MATCH":
         email.dispute_id = decision["dispute_id"]
         await db.commit()
         return decision
 
-    # -------------------------------------------------
-    # 4b. NEW DISPUTE
-    # -------------------------------------------------
+    # =================================================
+    # 4b. CREATE NEW DISPUTE
+    # =================================================
     summary = generate_dispute_summary(
         subject=email.subject,
         body=email.body,
