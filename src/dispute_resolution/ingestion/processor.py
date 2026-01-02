@@ -50,6 +50,7 @@ async def process_message(
         subject=parsed["subject"],
         body=parsed["body"],
         gmail_message_id=gmail_id,
+        thread_id=parsed["thread_id"],
     )
     db.add(email)
     await db.flush()

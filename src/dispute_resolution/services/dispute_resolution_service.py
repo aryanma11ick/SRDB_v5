@@ -7,6 +7,7 @@ from dispute_resolution.services.embedding_service import embed_email
 from dispute_resolution.services.vector_search_service import find_candidate_disputes
 from dispute_resolution.services.decision_service import decide_dispute
 from dispute_resolution.services.summary_service import generate_dispute_summary
+from dispute_resolution.services.thread_service import find_dispute_by_thread
 
 
 async def resolve_email(
@@ -21,6 +22,30 @@ async def resolve_email(
     - dict → when a dispute is MATCHED or CREATED
     - None → for NON_DISPUTE or AMBIGUOUS cases
     """
+
+
+    # ---- 0. THREAD-AWARE FAST PATH (NEW) ----
+    if email.thread_id:
+        dispute = await find_dispute_by_thread(
+            db=db,
+            supplier_id=email.supplier_id,
+            thread_id=email.thread_id,
+        )
+
+        if dispute:
+            email.dispute_id = dispute.id
+            email.intent_status = "DISPUTE"
+            email.intent_reason = "Matched via Gmail thread"
+            email.intent_confidence = 1.0
+
+            await db.commit()
+
+            return {
+                "action": "MATCH_THREAD",
+                "dispute_id": str(dispute.id),
+                "reason": "Matched via Gmail thread",
+            }
+
 
     # ---- 1. Intent classification ----
     intent = classify_intent(

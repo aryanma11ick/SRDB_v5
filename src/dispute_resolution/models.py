@@ -60,6 +60,7 @@ class Email(Base):
     body: Mapped[str] = mapped_column(Text)
     embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1024))
     gmail_message_id: Mapped[str] = mapped_column(Text, unique=True)
+    thread_id : Mapped[Optional[str]] = mapped_column(Text)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     intent_status: Mapped[Optional[str]] = mapped_column(Text)
@@ -68,8 +69,7 @@ class Email(Base):
 
     dispute: Mapped[Optional["Dispute"]] = relationship(back_populates="emails")
     supplier: Mapped["Supplier"] = relationship(back_populates="emails")
-
-
+    
 
 class ProcessedGmailMessage(Base):
     __tablename__ = "processed_gmail_messages"

@@ -43,6 +43,7 @@ def parse_gmail_message(message: dict) -> dict:
 
     return {
         "gmail_message_id": message["id"],
+        "thread_id": message["threadId"],
         "sender": sender,
         "subject": subject,
         "body": body,
