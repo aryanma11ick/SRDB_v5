@@ -7,7 +7,7 @@ from dispute_resolution.services.embedding_service import embed_email
 from dispute_resolution.services.vector_search_service import find_candidate_disputes
 from dispute_resolution.services.decision_service import decide_dispute
 from dispute_resolution.services.summary_service import generate_dispute_summary
-from dispute_resolution.services.thread_service import find_dispute_by_thread
+from dispute_resolution.services.thread_service import get_thread_context
 
 
 async def resolve_email(
@@ -19,53 +19,56 @@ async def resolve_email(
     Orchestrates full dispute resolution for a single email.
 
     Returns:
-    - dict → when a dispute is MATCHED or CREATED
-    - None → for NON_DISPUTE or AMBIGUOUS cases
+    - dict → MATCH / NEW / CLARIFICATION_SENT
+    - None → NOT_DISPUTE
     """
 
-
-    # ---- 0. THREAD-AWARE FAST PATH (NEW) ----
+    # -------------------------------------------------
+    # 0. THREAD-AWARE FAST PATH
+    # -------------------------------------------------
     if email.thread_id:
-        dispute = await find_dispute_by_thread(
-            db=db,
-            supplier_id=email.supplier_id,
-            thread_id=email.thread_id,
-        )
+        thread_ctx = await get_thread_context(db=db, thread_id=email.thread_id)
 
-        if dispute:
+        if thread_ctx and thread_ctx.get("dispute"):
+            dispute = thread_ctx["dispute"]
+
             email.dispute_id = dispute.id
             email.intent_status = "DISPUTE"
-            email.intent_reason = "Matched via Gmail thread"
             email.intent_confidence = 1.0
+            email.intent_reason = "Thread already linked to dispute"
 
             await db.commit()
-
             return {
-                "action": "MATCH_THREAD",
+                "action": "MATCH",
                 "dispute_id": str(dispute.id),
-                "reason": "Matched via Gmail thread",
+                "reason": "Thread already linked to dispute",
             }
 
-
-    # ---- 1. Intent classification ----
+    # -------------------------------------------------
+    # 1. INTENT CLASSIFICATION (single source of truth)
+    # -------------------------------------------------
     intent = classify_intent(
         subject=email.subject,
         body=email.body,
     )
 
     email.intent_status = intent["intent"]
+    email.intent_confidence = intent["confidence"]
     email.intent_reason = intent["reason"]
-    email.intent_confidence = intent["confidence_score"]
     await db.flush()
 
-    # ---- 2. NOT-DISPUTE ----
+    # -------------------------------------------------
+    # 2. NOT A DISPUTE
+    # -------------------------------------------------
     if intent["intent"] == "NOT_DISPUTE":
         await db.commit()
         return None
 
-    # ---- 3. AMBIGUOUS → clarification ----
+    # -------------------------------------------------
+    # 3. AMBIGUOUS → SEND CLARIFICATION
+    # -------------------------------------------------
     if intent["intent"] == "AMBIGUOUS":
-        clarification = generate_clarification_email(
+        _ = generate_clarification_email(
             subject=email.subject,
             body=email.body,
         )
@@ -76,7 +79,9 @@ async def resolve_email(
             "reason": "Low confidence dispute – clarification requested",
         }
 
-    # ---- 4. DISPUTE path ----
+    # -------------------------------------------------
+    # 4. DISPUTE PATH
+    # -------------------------------------------------
     email.embedding = embed_email(
         subject=email.subject,
         body=email.body,
@@ -89,6 +94,7 @@ async def resolve_email(
         email_embedding=email.embedding,
         k=3,
     )
+
     if not candidates:
         decision = {
             "action": "NEW",
@@ -101,14 +107,18 @@ async def resolve_email(
             body=email.body,
             candidate_disputes=candidates,
         )
-        
-    # ---- 4a. MATCH ----
+
+    # -------------------------------------------------
+    # 4a. MATCH EXISTING DISPUTE
+    # -------------------------------------------------
     if decision["action"] == "MATCH":
         email.dispute_id = decision["dispute_id"]
         await db.commit()
         return decision
 
-    # ---- 4b. NEW DISPUTE ----
+    # -------------------------------------------------
+    # 4b. CREATE NEW DISPUTE
+    # -------------------------------------------------
     summary = generate_dispute_summary(
         subject=email.subject,
         body=email.body,

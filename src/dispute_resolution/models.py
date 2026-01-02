@@ -86,6 +86,6 @@ class ProcessedGmailMessage(Base):
     gmail_message_id: Mapped[str] = mapped_column(Text, primary_key=True)
     processed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
-        default=lambda: datetime.now(timezone.utc)  # ✅ Fixed
+        default=lambda: datetime.now(timezone.utc)
     )
     was_dispute: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -19,3 +19,20 @@ async def find_dispute_by_thread(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+async def get_thread_context(db, thread_id: str):
+    emails = (
+        await db.execute(
+            select(Email)
+            .where(Email.thread_id == thread_id)
+            .order_by(Email.received_at)
+        )
+    ).scalars().all()
+
+    dispute = next((e.dispute for e in emails if e.dispute_id), None)
+
+    return {
+        "emails": emails,
+        "dispute": dispute,
+        "last_intent": emails[-1].intent_status if emails else None,
+    }
