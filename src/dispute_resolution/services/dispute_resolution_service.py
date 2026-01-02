@@ -7,7 +7,7 @@ from dispute_resolution.services.clarification_service import extract_facts_and_
 from dispute_resolution.services.embedding_service import embed_email
 from dispute_resolution.services.vector_search_service import find_candidate_disputes
 from dispute_resolution.services.decision_service import decide_dispute
-from dispute_resolution.services.summary_service import generate_dispute_summary
+from dispute_resolution.services.summary_service import generate_dispute_summary, resummarize_dispute
 from dispute_resolution.services.thread_service import get_thread_context
 from dispute_resolution.services.reply_service import send_reply
 
@@ -156,10 +156,20 @@ async def resolve_email(
     # 4a. MATCH EXISTING DISPUTE
     # =================================================
     if decision["action"] == "MATCH":
-        email.dispute_id = decision["dispute_id"]
+        dispute_id = decision["dispute_id"]
+
+        email.dispute_id = dispute_id
+        await db.flush()
+
+        dispute = await db.get(Dispute, dispute_id)
+        if dispute:
+            await resummarize_dispute(
+                db=db,
+                dispute=dispute,
+            )
+
         await db.commit()
         return decision
-
     # =================================================
     # 4b. CREATE NEW DISPUTE
     # =================================================
