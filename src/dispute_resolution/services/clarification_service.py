@@ -1,6 +1,7 @@
 from typing import Any
 from dispute_resolution.llm.client import llm
 from dispute_resolution.llm.prompts import CLARIFICATION_PROMPT
+from dispute_resolution.utils.llm import normalize_llm_content
 
 
 def _normalize_llm_content(content: Any) -> str:
@@ -24,12 +25,16 @@ def _normalize_llm_content(content: Any) -> str:
 
 
 def generate_clarification_email(subject: str, body: str) -> str:
-    prompt = CLARIFICATION_PROMPT.format(
-        subject=subject,
-        body=body,
+    response = llm.invoke(
+        CLARIFICATION_PROMPT.format(subject=subject, body=body)
     )
 
-    response = llm.invoke(prompt)
+    text = normalize_llm_content(response.content).strip()
 
-    text = _normalize_llm_content(response.content)
-    return text.strip()
+    # Safety guard: remove markdown or bullet options if hallucinated
+    forbidden_markers = ["Option", "Explanation", "**", "Here are"]
+    for marker in forbidden_markers:
+        if marker in text:
+            text = text.split(marker)[0].strip()
+
+    return text

@@ -10,7 +10,7 @@ def send_reply(
     to: str,
     subject: str,
     body: str,
-    thread_id: str,
+    thread_id: str | None = None,
     in_reply_to: str,
 ):
     """

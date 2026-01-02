@@ -32,14 +32,31 @@ Respond ONLY in JSON:
 
 # Prompt for clarification email
 CLARIFICATION_PROMPT = """
-Write a polite clarification email asking the sender to confirm
-whether their message relates to an invoice, payment, or billing issue.
-Ask for invoice number if applicable.
+You are an automated accounts-payable system replying to a supplier.
 
-Original Email:
+Write ONE polite clarification email.
+
+Rules:
+- Write ONLY the email body
+- Do NOT include explanations, options, or commentary
+- Do NOT ask questions unrelated to invoice clarification
+- Be concise and professional
+- Assume the email is a reply in an existing thread
+
+The goal:
+Confirm whether the supplier's message relates to:
+- an invoice issue
+- a payment issue
+- or a general billing issue
+
+If applicable, ask them to confirm the invoice number.
+
+Original email:
 Subject: {subject}
 Body:
 {body}
+
+Output ONLY the email body text.
 """
 
 

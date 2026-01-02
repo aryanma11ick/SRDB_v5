@@ -1,4 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from dispute_resolution.models import Email, Dispute
 from dispute_resolution.services.intent_service import classify_intent
@@ -73,37 +74,42 @@ async def resolve_email(
     # 3. AMBIGUOUS → CLARIFICATION (THREAD-LEVEL)
     # -------------------------------------------------
     if intent["intent"] == "AMBIGUOUS":
-        # Use thread history to avoid re-sending
+
+        # ---- Thread-level guard: has clarification already been sent? ----
         if email.thread_id:
-            ctx = await get_thread_context(
-            db=db,
-            supplier_id=email.supplier_id,
-            thread_id=email.thread_id,
-        )
-            if ctx and ctx.get("last_intent") == "AMBIGUOUS":
+            existing = await db.execute(
+                select(Email).where(
+                    Email.thread_id == email.thread_id,
+                    Email.clarification_sent.is_(True),
+                )
+            )
+            if existing.scalars().first():
                 await db.commit()
                 return {
                     "action": "WAITING",
                     "reason": "Clarification already sent for this thread",
                 }
 
-        # Send clarification reply (only if thread exists)
-        if email.thread_id:
-            clarification = generate_clarification_email(
-                subject=email.subject,
-                body=email.body,
-            )
+        # ---- Generate clarification ----
+        clarification = generate_clarification_email(
+            subject=email.subject,
+            body=email.body,
+        )
 
-            send_reply(
-                service=gmail_service,
-                to=sender,
-                subject=email.subject,
-                body=clarification,
-                thread_id=email.thread_id,
-                in_reply_to=email.gmail_message_id,
-            )
+        # ---- Send reply (thread-safe) ----
+        send_reply(
+            service=gmail_service,
+            to=sender,
+            subject=f"Re: {email.subject}",
+            body=clarification,
+            thread_id=email.thread_id,      # OK if None
+            in_reply_to=email.gmail_message_id,
+        )
 
+        # ---- Persist state ----
+        email.clarification_sent = True
         await db.commit()
+
         return {
             "action": "CLARIFICATION_SENT",
             "reason": "Awaiting supplier response",

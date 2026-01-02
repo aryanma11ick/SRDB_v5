@@ -20,7 +20,7 @@ def classify_intent(subject: str, body: str) -> dict:
     Returns:
     {
       "intent": "DISPUTE" | "NOT_DISPUTE" | "AMBIGUOUS",
-      "confidence": float,
+      "confidence_score": float,
       "reason": str
     }
     """
@@ -39,11 +39,9 @@ def classify_intent(subject: str, body: str) -> dict:
     try:
         result = json.loads(clean)
     except json.JSONDecodeError:
-        logger.error("Intent classifier returned invalid JSON")
-        logger.error(raw)
         return {
             "intent": "AMBIGUOUS",
-            "confidence": 0.0,
+            "confidence_score": 0.0,
             "reason": "Could not parse LLM response",
         }
 
@@ -51,16 +49,13 @@ def classify_intent(subject: str, body: str) -> dict:
     reason = result.get("reason", "")
     confidence = result.get("confidence_score", 0.0)
 
-    # ---- Validate intent ----
     if intent not in {"DISPUTE", "NOT_DISPUTE", "AMBIGUOUS"}:
-        logger.warning("Invalid intent returned, defaulting to AMBIGUOUS")
         return {
             "intent": "AMBIGUOUS",
-            "confidence": 0.0,
+            "confidence_score": 0.0,
             "reason": "Invalid intent value from LLM",
         }
 
-    # ---- Validate & clamp confidence ----
     try:
         confidence = float(confidence)
     except (TypeError, ValueError):
@@ -68,16 +63,15 @@ def classify_intent(subject: str, body: str) -> dict:
 
     confidence = max(0.0, min(1.0, confidence))
 
-    # ---- Confidence gating ----
     if intent == "DISPUTE" and confidence < CONFIDENCE_THRESHOLD:
         return {
             "intent": "AMBIGUOUS",
-            "confidence": confidence,
+            "confidence_score": confidence,
             "reason": reason,
         }
 
     return {
         "intent": intent,
-        "confidence": confidence,
+        "confidence_score": confidence,
         "reason": reason,
     }
