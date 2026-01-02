@@ -2,8 +2,7 @@ import asyncio
 from dispute_resolution.database import AsyncSessionLocal
 from dispute_resolution.ingestion.gmail_client import (
     get_gmail_service,
-    ensure_labels,
-    modify_message_labels,
+    ensure_labels
 )
 from dispute_resolution.ingestion.processor import process_message
 from dispute_resolution.utils.logging import logger
