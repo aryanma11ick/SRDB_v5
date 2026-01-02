@@ -122,14 +122,21 @@ async def process_message(
     labels_to_remove = ["UNREAD"]
 
     if decision is None:
+        # Not a dispute
         if email.intent_status == "NOT_DISPUTE":
             labels_to_add.append(label_map["Not_Dispute"])
         else:
             labels_to_add.append(label_map["Needs_Clarification"])
+
     else:
-        if decision["action"] in {"NEW", "MATCH"}:
+        action = decision["action"]
+
+        if action in {"NEW", "MATCH"}:
+            # ✅ Real dispute → ensure clarification label is NOT present
             labels_to_add.append(label_map["Dispute"])
+            labels_to_remove.append(label_map["Needs_Clarification"])
         else:
+            # CLARIFICATION_SENT or WAITING
             labels_to_add.append(label_map["Needs_Clarification"])
 
     modify_message_labels(
