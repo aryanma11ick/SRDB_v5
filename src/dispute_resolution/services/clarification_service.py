@@ -1,6 +1,6 @@
 from typing import Any
 from dispute_resolution.llm.client import llm
-from dispute_resolution.llm.prompts import CLARIFICATION_PROMPT
+from dispute_resolution.llm.prompts import EXTRACT_AND_CLARIFY_PROMPT
 from dispute_resolution.utils.llm import normalize_llm_content
 
 
@@ -26,7 +26,7 @@ def _normalize_llm_content(content: Any) -> str:
 
 def generate_clarification_email(subject: str, body: str) -> str:
     response = llm.invoke(
-        CLARIFICATION_PROMPT.format(subject=subject, body=body)
+        EXTRACT_AND_CLARIFY_PROMPT.format(subject=subject, body=body)
     )
 
     text = normalize_llm_content(response.content).strip()

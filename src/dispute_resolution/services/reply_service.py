@@ -10,29 +10,39 @@ def send_reply(
     to: str,
     subject: str,
     body: str,
-    thread_id: str | None = None,
     in_reply_to: str,
+    thread_id: str | None = None,
 ):
     """
-    Sends a reply in the same Gmail thread.
+    Sends a clarification reply in the same Gmail thread.
+    Gmail automatically handles 'Re:'.
     """
+
     message = EmailMessage()
     message["To"] = to
-    message["Subject"] = f"Re: {subject}"
+    message["Subject"] = subject               # ❌ NO manual "Re:"
     message["In-Reply-To"] = in_reply_to
     message["References"] = in_reply_to
+
+    # 🔒 Mark as system-generated
+    message["X-DR-SYSTEM"] = "clarification"
+
     message.set_content(body)
 
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode()
 
+    payload = {"raw": raw}
+
+    # Only include threadId if it exists
+    if thread_id:
+        payload["threadId"] = thread_id
+
     try:
         service.users().messages().send(
             userId="me",
-            body={
-                "raw": raw,
-                "threadId": thread_id,
-            },
+            body=payload,
         ).execute()
-    except HttpError as e:
-        logger.error("Failed to send clarification reply")
+    except HttpError:
+        logger.exception("Failed to send clarification reply")
         raise
+    

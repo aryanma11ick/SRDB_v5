@@ -31,33 +31,75 @@ Respond ONLY in JSON:
 
 
 # Prompt for clarification email
-CLARIFICATION_PROMPT = """
-You are an automated accounts-payable system replying to a supplier.
+EXTRACT_AND_CLARIFY_PROMPT = """
+You are an automated accounts-payable system analyzing supplier emails.
 
-Write ONE polite clarification email.
+Your job has TWO steps:
+1) Extract structured facts from the email
+2) Write ONE clarification reply ONLY if information is missing
+
+==================================================
+STEP 1: EXTRACT FACTS (STRICT)
+==================================================
+
+Extract ONLY what is explicitly present in the email.
+DO NOT infer or assume missing details.
+
+Extract:
+- invoice_numbers: list of invoice numbers explicitly mentioned, or []
+- amounts: list of monetary amounts explicitly mentioned, or []
+- issue_type:
+    OVERCHARGE | UNDERPAYMENT | MISSING_PAYMENT | INVOICE_ERROR | CONTRACT_DISPUTE | OTHER | UNCLEAR
+- desired_action:
+    CREDIT | EXPLANATION | PAYMENT | CORRECTION | UNCLEAR
+
+==================================================
+STEP 2: DETERMINE MISSING INFORMATION
+==================================================
 
 Rules:
-- Write ONLY the email body
-- Do NOT include explanations, options, or commentary
-- Do NOT ask questions unrelated to invoice clarification
-- Be concise and professional
-- Assume the email is a reply in an existing thread
+- If invoice_numbers is NOT empty → DO NOT ask for invoice number
+- If amounts is NOT empty → DO NOT ask for amounts
+- If issue_type is NOT UNCLEAR → DO NOT ask what the issue is
+- If desired_action is NOT UNCLEAR → DO NOT ask what action they want
 
-The goal:
-Confirm whether the supplier's message relates to:
-- an invoice issue
-- a payment issue
-- or a general billing issue
+==================================================
+STEP 3: GENERATE CLARIFICATION EMAIL
+==================================================
 
-If applicable, ask them to confirm the invoice number.
+If missing_info is NOT empty:
+- Write ONE concise clarification email body requesting ONLY the missing information
+- MAXIMUM 3–4 sentences
+- No greeting, subject, or signature
 
-Original email:
+If missing_info IS empty:
+- email_body MUST be an empty string ""
+
+==================================================
+OUTPUT FORMAT (STRICT JSON ONLY)
+==================================================
+
+{{
+  "extracted_facts": {{
+    "invoice_numbers": [],
+    "amounts": [],
+    "issue_type": "UNCLEAR",
+    "desired_action": "UNCLEAR",
+    "missing_info": []
+  }},
+  "email_body": ""
+}}
+
+==================================================
+EMAIL TO ANALYZE
+==================================================
+
 Subject: {subject}
 Body:
 {body}
-
-Output ONLY the email body text.
 """
+
+
 
 
 

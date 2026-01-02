@@ -32,6 +32,7 @@ async def process_message(
     # 0. Ignore system-generated clarification emails
     # -------------------------------------------------
     headers = parsed.get("headers", {})
+    
     if headers.get("X-DR-SYSTEM") == "clarification":
         logger.info(f"Ignoring system clarification email {gmail_id}")
         return
