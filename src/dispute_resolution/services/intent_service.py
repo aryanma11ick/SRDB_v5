@@ -20,7 +20,7 @@ def classify_intent(subject: str, body: str) -> dict:
     Returns:
     {
       "intent": "DISPUTE" | "NOT_DISPUTE" | "AMBIGUOUS",
-      "confidence_score": float,
+      "confidence": float,
       "reason": str
     }
     """
@@ -43,51 +43,41 @@ def classify_intent(subject: str, body: str) -> dict:
         logger.error(raw)
         return {
             "intent": "AMBIGUOUS",
-            "confidence_score": 0.0,
+            "confidence": 0.0,
             "reason": "Could not parse LLM response",
         }
 
     intent = result.get("intent")
     reason = result.get("reason", "")
-    score = result.get("confidence_score")
+    confidence = result.get("confidence_score", 0.0)
 
-    # ---- Basic validation ----
-    if intent not in {"DISPUTE", "NOT_DISPUTE"}:
+    # ---- Validate intent ----
+    if intent not in {"DISPUTE", "NOT_DISPUTE", "AMBIGUOUS"}:
         logger.warning("Invalid intent returned, defaulting to AMBIGUOUS")
         return {
             "intent": "AMBIGUOUS",
-            "confidence_score": 0.0,
+            "confidence": 0.0,
             "reason": "Invalid intent value from LLM",
         }
 
+    # ---- Validate & clamp confidence ----
     try:
-        score = float(score)
+        confidence = float(confidence)
     except (TypeError, ValueError):
-        logger.warning("Invalid confidence_score, defaulting to AMBIGUOUS")
+        confidence = 0.0
+
+    confidence = max(0.0, min(1.0, confidence))
+
+    # ---- Confidence gating ----
+    if intent == "DISPUTE" and confidence < CONFIDENCE_THRESHOLD:
         return {
             "intent": "AMBIGUOUS",
-            "confidence_score": 0.0,
-            "reason": "Invalid confidence score from LLM",
+            "confidence": confidence,
+            "reason": reason,
         }
 
-    # ---- Deterministic normalization ----
-    if intent == "DISPUTE":
-        if score >= CONFIDENCE_THRESHOLD:
-            return {
-                "intent": "DISPUTE",
-                "confidence_score": score,
-                "reason": reason,
-            }
-        else:
-            return {
-                "intent": "AMBIGUOUS",
-                "confidence_score": score,
-                "reason": reason,
-            }
-
-    # intent == NOT_DISPUTE
     return {
-        "intent": "NOT_DISPUTE",
-        "confidence_score": score,
+        "intent": intent,
+        "confidence": confidence,
         "reason": reason,
     }

@@ -20,15 +20,20 @@ async def resolve_email(
 ) -> dict | None:
     """
     Returns:
-    - MATCH / NEW / CLARIFICATION_SENT
+    - MATCH / NEW / CLARIFICATION_SENT / WAITING
     - None → NOT_DISPUTE
     """
 
     # -------------------------------------------------
-    # 0. THREAD SHORT-CIRCUIT (FAST PATH)
+    # 0. THREAD SHORT-CIRCUIT (existing dispute)
     # -------------------------------------------------
     if email.thread_id:
-        ctx = await get_thread_context(db=db, thread_id=email.thread_id)
+        ctx = await get_thread_context(
+            db=db,
+            supplier_id=email.supplier_id,
+            thread_id=email.thread_id,
+        )
+
         if ctx and ctx.get("dispute"):
             dispute = ctx["dispute"]
 
@@ -53,7 +58,7 @@ async def resolve_email(
     )
 
     email.intent_status = intent["intent"]
-    email.intent_confidence = intent["confidence"]
+    email.intent_confidence = intent["confidence_score"]
     email.intent_reason = intent["reason"]
     await db.flush()
 
@@ -65,22 +70,30 @@ async def resolve_email(
         return None
 
     # -------------------------------------------------
-    # 3. AMBIGUOUS → SEND CLARIFICATION (ONCE)
+    # 3. AMBIGUOUS → CLARIFICATION (THREAD-LEVEL)
     # -------------------------------------------------
     if intent["intent"] == "AMBIGUOUS":
-        if email.clarification_sent:
-            await db.commit()
-            return {
-                "action": "WAITING",
-                "reason": "Clarification already sent",
-            }
-
-        clarification = generate_clarification_email(
-            subject=email.subject,
-            body=email.body,
-        )
-
+        # Use thread history to avoid re-sending
         if email.thread_id:
+            ctx = await get_thread_context(
+            db=db,
+            supplier_id=email.supplier_id,
+            thread_id=email.thread_id,
+        )
+            if ctx and ctx.get("last_intent") == "AMBIGUOUS":
+                await db.commit()
+                return {
+                    "action": "WAITING",
+                    "reason": "Clarification already sent for this thread",
+                }
+
+        # Send clarification reply (only if thread exists)
+        if email.thread_id:
+            clarification = generate_clarification_email(
+                subject=email.subject,
+                body=email.body,
+            )
+
             send_reply(
                 service=gmail_service,
                 to=sender,
@@ -90,9 +103,7 @@ async def resolve_email(
                 in_reply_to=email.gmail_message_id,
             )
 
-        email.clarification_sent = True
         await db.commit()
-
         return {
             "action": "CLARIFICATION_SENT",
             "reason": "Awaiting supplier response",

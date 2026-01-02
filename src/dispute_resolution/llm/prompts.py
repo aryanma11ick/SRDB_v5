@@ -22,7 +22,7 @@ Body:
 Respond ONLY in JSON:
 {{
   "intent": "DISPUTE | NOT_DISPUTE",
-  "confidence_score": 0.0,
+  "confidence_score": 0.0 to 1.0,
   "reason": "short explanation"
 }}
 """

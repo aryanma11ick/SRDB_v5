@@ -77,7 +77,9 @@ class Email(Base):
     intent_confidence: Mapped[Optional[float]] = mapped_column(Float)
 
     clarification_sent: Mapped[bool] = mapped_column(
-        Boolean, default=False
+        Boolean,
+        default=False,
+        nullable=False,
     )
 
     dispute: Mapped[Optional["Dispute"]] = relationship(back_populates="emails")
