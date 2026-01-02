@@ -6,12 +6,18 @@ from dispute_resolution.models import Email, ProcessedGmailMessage
 from dispute_resolution.services.dispute_resolution_service import resolve_email
 from dispute_resolution.services.supplier_service import get_supplier_by_domain
 from dispute_resolution.utils.logging import logger
+from dispute_resolution.config import settings
 
 
 def _extract_domain(from_header: str) -> str | None:
     if "@" not in from_header:
         return None
     return from_header.split("@")[-1].strip(">").lower()
+
+
+def is_system_email(parsed: dict) -> bool:
+    sender = parsed.get("sender", "").lower()
+    return settings.SYSTEM_EMAIL_ADDRESS.lower() in sender
 
 
 async def process_message(
@@ -29,12 +35,28 @@ async def process_message(
     gmail_id = parsed["gmail_message_id"]
 
     # -------------------------------------------------
-    # 0. Ignore system-generated clarification emails
+    # 0. HARD STOP: Ignore system-generated emails
     # -------------------------------------------------
-    headers = parsed.get("headers", {})
-    
-    if headers.get("X-DR-SYSTEM") == "clarification":
-        logger.info(f"Ignoring system clarification email {gmail_id}")
+    if is_system_email(parsed):
+        logger.info(f"Ignoring SYSTEM email {gmail_id}")
+
+        # Ensure idempotency
+        if not await db.get(ProcessedGmailMessage, gmail_id):
+            db.add(
+                ProcessedGmailMessage(
+                    gmail_message_id=gmail_id,
+                    was_dispute=False,
+                )
+            )
+            await db.commit()
+
+        # Mark processed + read in Gmail
+        modify_message_labels(
+            service=gmail_service,
+            message_id=gmail_id,
+            add=[label_map["Processed"]],
+            remove=["UNREAD"],
+        )
         return
 
     # -------------------------------------------------
@@ -81,7 +103,7 @@ async def process_message(
     )
 
     # -------------------------------------------------
-    # 5. Persist processed state (DB is source of truth)
+    # 5. Persist processed state
     # -------------------------------------------------
     was_dispute = decision is not None and decision["action"] in {"NEW", "MATCH"}
 
@@ -94,19 +116,21 @@ async def process_message(
     await db.commit()
 
     # -------------------------------------------------
-    # 6. Gmail labeling (side-effect AFTER commit)
+    # 6. Gmail labeling (AFTER commit)
     # -------------------------------------------------
-    labels_to_add: list[str] = [label_map["Processed"]]
-    labels_to_remove: list[str] = ["UNREAD"]  # system label
+    labels_to_add = [label_map["Processed"]]
+    labels_to_remove = ["UNREAD"]
 
     if decision is None:
         if email.intent_status == "NOT_DISPUTE":
             labels_to_add.append(label_map["Not_Dispute"])
         else:
-            # AMBIGUOUS / clarification path
             labels_to_add.append(label_map["Needs_Clarification"])
     else:
-        labels_to_add.append(label_map["Dispute"])
+        if decision["action"] in {"NEW", "MATCH"}:
+            labels_to_add.append(label_map["Dispute"])
+        else:
+            labels_to_add.append(label_map["Needs_Clarification"])
 
     modify_message_labels(
         service=gmail_service,

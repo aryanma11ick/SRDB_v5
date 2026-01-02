@@ -6,7 +6,10 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gemma2:27b"
     EMBEDDING_MODEL: str = "bge-m3"
 
+    SYSTEM_EMAIL_ADDRESS: str
+
     class Config:
         env_file = ".env"
+        extra = "forbid"
 
 settings = Settings()

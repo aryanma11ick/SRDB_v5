@@ -4,24 +4,7 @@ from typing import List, Dict, Any
 from dispute_resolution.llm.client import llm
 from dispute_resolution.llm.prompts import DECISION_PROMPT
 from dispute_resolution.utils.logging import logger
-
-def _normalize_llm_content(content: Any) -> str:
-    """
-    Normalize LangChain LLM content into a string.
-    """
-    if isinstance(content, str):
-        return content
-
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict):
-                parts.append(str(item))
-        return "\n".join(parts)
-
-    return str(content)
+from dispute_resolution.utils.llm import normalize_llm_content
 
 def _format_disputes(disputes: List[Dict[str, Any]]) -> str:
     """
@@ -74,7 +57,7 @@ def decide_dispute(
     response = llm.invoke(prompt)
 
     # LangChain returns an AIMessage
-    raw = _normalize_llm_content(response.content).strip()
+    raw = normalize_llm_content(response.content).strip()
     clean = _extract_json(raw)
 
     try:
