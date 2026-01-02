@@ -72,7 +72,12 @@ async def process_message(
     # -------------------------------------------------
     # 4. Delegate to dispute resolution pipeline
     # -------------------------------------------------
-    decision = await resolve_email(db=db, email=email)
+    decision = await resolve_email(
+        db=db,
+        email=email,
+        gmail_service=gmail_service,
+        sender=parsed["sender"],
+    )
 
     # -------------------------------------------------
     # 5. Persist processed state (DB is source of truth)

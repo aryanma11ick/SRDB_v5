@@ -8,29 +8,29 @@ from dispute_resolution.services.vector_search_service import find_candidate_dis
 from dispute_resolution.services.decision_service import decide_dispute
 from dispute_resolution.services.summary_service import generate_dispute_summary
 from dispute_resolution.services.thread_service import get_thread_context
+from dispute_resolution.services.reply_service import send_reply
 
 
 async def resolve_email(
     *,
     db: AsyncSession,
     email: Email,
+    gmail_service,
+    sender: str,
 ) -> dict | None:
     """
-    Orchestrates full dispute resolution for a single email.
-
     Returns:
-    - dict → MATCH / NEW / CLARIFICATION_SENT
+    - MATCH / NEW / CLARIFICATION_SENT
     - None → NOT_DISPUTE
     """
 
     # -------------------------------------------------
-    # 0. THREAD-AWARE FAST PATH
+    # 0. THREAD SHORT-CIRCUIT (FAST PATH)
     # -------------------------------------------------
     if email.thread_id:
-        thread_ctx = await get_thread_context(db=db, thread_id=email.thread_id)
-
-        if thread_ctx and thread_ctx.get("dispute"):
-            dispute = thread_ctx["dispute"]
+        ctx = await get_thread_context(db=db, thread_id=email.thread_id)
+        if ctx and ctx.get("dispute"):
+            dispute = ctx["dispute"]
 
             email.dispute_id = dispute.id
             email.intent_status = "DISPUTE"
@@ -45,7 +45,7 @@ async def resolve_email(
             }
 
     # -------------------------------------------------
-    # 1. INTENT CLASSIFICATION (single source of truth)
+    # 1. INTENT CLASSIFICATION
     # -------------------------------------------------
     intent = classify_intent(
         subject=email.subject,
@@ -65,18 +65,37 @@ async def resolve_email(
         return None
 
     # -------------------------------------------------
-    # 3. AMBIGUOUS → SEND CLARIFICATION
+    # 3. AMBIGUOUS → SEND CLARIFICATION (ONCE)
     # -------------------------------------------------
     if intent["intent"] == "AMBIGUOUS":
-        _ = generate_clarification_email(
+        if email.clarification_sent:
+            await db.commit()
+            return {
+                "action": "WAITING",
+                "reason": "Clarification already sent",
+            }
+
+        clarification = generate_clarification_email(
             subject=email.subject,
             body=email.body,
         )
+
+        if email.thread_id:
+            send_reply(
+                service=gmail_service,
+                to=sender,
+                subject=email.subject,
+                body=clarification,
+                thread_id=email.thread_id,
+                in_reply_to=email.gmail_message_id,
+            )
+
+        email.clarification_sent = True
         await db.commit()
+
         return {
             "action": "CLARIFICATION_SENT",
-            "dispute_id": None,
-            "reason": "Low confidence dispute – clarification requested",
+            "reason": "Awaiting supplier response",
         }
 
     # -------------------------------------------------
@@ -95,21 +114,18 @@ async def resolve_email(
         k=3,
     )
 
-    if not candidates:
-        decision = {
-            "action": "NEW",
-            "dispute_id": None,
-            "reason": "No similar disputes found",
-        }
-    else:
-        decision = decide_dispute(
+    decision = (
+        {"action": "NEW", "dispute_id": None}
+        if not candidates
+        else decide_dispute(
             subject=email.subject,
             body=email.body,
             candidate_disputes=candidates,
         )
+    )
 
     # -------------------------------------------------
-    # 4a. MATCH EXISTING DISPUTE
+    # 4a. MATCH
     # -------------------------------------------------
     if decision["action"] == "MATCH":
         email.dispute_id = decision["dispute_id"]
@@ -117,22 +133,17 @@ async def resolve_email(
         return decision
 
     # -------------------------------------------------
-    # 4b. CREATE NEW DISPUTE
+    # 4b. NEW DISPUTE
     # -------------------------------------------------
     summary = generate_dispute_summary(
         subject=email.subject,
         body=email.body,
     )
 
-    summary_embedding = embed_email(
-        subject="Dispute summary",
-        body=summary,
-    )
-
     dispute = Dispute(
         supplier_id=email.supplier_id,
         summary=summary,
-        summary_embedding=summary_embedding,
+        summary_embedding=embed_email("Dispute summary", summary),
     )
 
     db.add(dispute)

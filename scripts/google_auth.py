@@ -4,7 +4,8 @@ import pickle
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 # Read + modify (labels, mark read later). No send/delete.
-SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.modify",
+          "https://www.googleapis.com/auth/gmail.send"]
 
 CREDENTIALS_FILE = Path("credentials.json")
 TOKEN_FILE = Path("token.pickle")
