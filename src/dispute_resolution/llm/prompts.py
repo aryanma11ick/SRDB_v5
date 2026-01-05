@@ -32,11 +32,11 @@ Body:
 {body}
 
 Respond ONLY in JSON:
-{
+{{
   "intent": "DISPUTE | AMBIGUOUS | NOT_DISPUTE",
   "confidence_score": 0.0 to 1.0,
   "reason": "short explanation"
-}
+}}
 """
 
 

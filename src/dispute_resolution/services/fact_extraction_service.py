@@ -1,5 +1,6 @@
 import json
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List
 
 from dispute_resolution.llm.client import llm
 from dispute_resolution.utils.llm import normalize_llm_content
@@ -7,9 +8,9 @@ from dispute_resolution.utils.logging import logger
 from dispute_resolution.llm.prompts import FACT_EXTRACTION_PROMPT
 
 
-# -----------------------------
+# =================================================
 # Canonical empty schema
-# -----------------------------
+# =================================================
 
 EMPTY_EXTRACTION: Dict[str, Any] = {
     "facts": {
@@ -40,87 +41,80 @@ EMPTY_EXTRACTION: Dict[str, Any] = {
     "evidence": {},
 }
 
-# -----------------------------
-# Helper: safe JSON parse
-# -----------------------------
 
-def _safe_json_load(text: str) -> Dict[str, Any] | None:
+# =================================================
+# Helper: robust JSON extraction
+# =================================================
+
+def _safe_extract_json(text: str) -> Dict[str, Any] | None:
+    """
+    Extract the first valid JSON object from LLM output.
+    Handles markdown, prose, and partial responses.
+    """
+    text = text.strip()
+
+    # Remove markdown code fences
+    if text.startswith("```"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:-1]).strip()
+
+    # Direct parse
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        return None
+        pass
+
+    # Regex fallback (first JSON object)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return None
+
+    return None
 
 
-# -----------------------------
-# Public API
-# -----------------------------
+# =================================================
+# Helper: deterministic missing-field inference
+# =================================================
 
-def extract_facts(
-    *,
-    subject: str,
-    body: str,
-) -> Dict[str, Any]:
+def _infer_missing_fields(facts: Dict[str, Any]) -> List[str]:
     """
-    Extract structured dispute facts from an email.
-
-    Returns a canonical schema:
-    {
-        facts,
-        confidence,
-        missing_fields,
-        evidence
-    }
-
-    This function:
-    - never raises
-    - never decides intent
-    - never sends emails
+    Determine missing fields based on schema completeness.
+    This is deterministic and does NOT rely on the LLM.
     """
+    missing: List[str] = []
 
-    prompt = FACT_EXTRACTION_PROMPT.format(
-        schema=json.dumps(EMPTY_EXTRACTION, indent=2),
-        subject=subject,
-        body=body,
-    )
+    ci = facts["commercial_identifiers"]
+    fin = facts["financials"]
+    issue = facts["issue"]
+    action = facts["requested_action"]
 
-    logger.info("Running LLM fact extraction")
+    if not ci.get("invoice_numbers"):
+        missing.append("commercial_identifiers.invoice_numbers")
 
-    try:
-        response = llm.invoke(prompt)
-    except Exception:
-        logger.exception("LLM call failed during fact extraction")
-        return EMPTY_EXTRACTION.copy()
+    if not ci.get("purchase_order_numbers"):
+        missing.append("commercial_identifiers.purchase_order_numbers")
 
-    raw = normalize_llm_content(response.content).strip()
+    if fin.get("expected_amount") is None:
+        missing.append("financials.expected_amount")
 
-    data = _safe_json_load(raw)
-    if not data:
-        logger.error("Failed to parse fact extraction JSON")
-        return EMPTY_EXTRACTION.copy()
+    if fin.get("paid_amount") is None:
+        missing.append("financials.paid_amount")
 
-    # -----------------------------
-    # Defensive normalization
-    # -----------------------------
+    if issue.get("category") in (None, "UNKNOWN"):
+        missing.append("issue.category")
 
-    normalized = EMPTY_EXTRACTION.copy()
+    if action.get("type") in (None, "UNKNOWN"):
+        missing.append("requested_action.type")
 
-    for key in normalized:
-        if key in data and isinstance(data[key], type(normalized[key])):
-            normalized[key] = data[key]
-
-    # Ensure enums are valid
-    _normalize_enums(normalized)
-
-    # Ensure missing_fields is a list
-    if not isinstance(normalized["missing_fields"], list):
-        normalized["missing_fields"] = []
-
-    return normalized
+    return missing
 
 
-# -----------------------------
+# =================================================
 # Enum validation
-# -----------------------------
+# =================================================
 
 def _normalize_enums(payload: Dict[str, Any]) -> None:
     issue_category = payload["facts"]["issue"].get("category")
@@ -146,3 +140,62 @@ def _normalize_enums(payload: Dict[str, Any]) -> None:
         "UNKNOWN",
     }:
         payload["facts"]["requested_action"]["type"] = "UNKNOWN"
+
+
+# =================================================
+# Public API
+# =================================================
+
+def extract_facts(
+    *,
+    subject: str,
+    body: str,
+) -> Dict[str, Any]:
+    """
+    Extract structured dispute facts from an email.
+
+    Guarantees:
+    - never raises
+    - never decides intent
+    - never sends emails
+    - always returns a complete canonical structure
+    """
+
+    prompt = FACT_EXTRACTION_PROMPT.format(
+        schema=json.dumps(EMPTY_EXTRACTION, indent=2),
+        subject=subject,
+        body=body,
+    )
+
+    logger.info("Running LLM fact extraction")
+
+    try:
+        response = llm.invoke(prompt)
+    except Exception:
+        logger.exception("LLM call failed during fact extraction")
+        return EMPTY_EXTRACTION.copy()
+
+    raw = normalize_llm_content(response.content).strip()
+    data = _safe_extract_json(raw)
+
+    if not data:
+        logger.error("Failed to parse fact extraction JSON")
+        normalized = EMPTY_EXTRACTION.copy()
+    else:
+        normalized = EMPTY_EXTRACTION.copy()
+
+        # Shallow, type-safe merge
+        for key in normalized:
+            if key in data and isinstance(data[key], type(normalized[key])):
+                normalized[key] = data[key]
+
+    # Enum validation
+    _normalize_enums(normalized)
+
+    # -------------------------------------------------
+    # 🔑 CRITICAL FIX: deterministic missing fields
+    # -------------------------------------------------
+    inferred_missing = _infer_missing_fields(normalized["facts"])
+    normalized["missing_fields"] = inferred_missing
+
+    return normalized
