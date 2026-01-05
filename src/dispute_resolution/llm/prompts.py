@@ -27,6 +27,36 @@ Respond ONLY in JSON:
 }}
 """
 
+FACT_EXTRACTION_PROMPT = """
+You are an information extraction system for supplier dispute emails.
+
+Your task is to extract structured dispute-related facts from the email.
+You must NOT decide whether this is a dispute.
+You must NOT generate clarification text.
+You must NOT infer or guess missing information.
+
+Rules:
+- If a value is not explicitly stated, use null or UNKNOWN.
+- Do NOT perform calculations.
+- Do NOT assume intent.
+- Return ONLY valid JSON.
+- Follow the schema EXACTLY.
+
+Schema:
+{schema}
+
+EMAIL SUBJECT:
+{subject}
+
+EMAIL BODY:
+{body}
+
+Confidence rules:
+- 0.9–1.0: Explicitly stated
+- 0.6–0.8: Clearly implied
+- 0.3–0.5: Weak signal
+- <0.3: Avoid unless unavoidable
+"""
 
 
 
