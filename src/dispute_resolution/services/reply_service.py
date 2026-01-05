@@ -4,6 +4,18 @@ import base64
 from email.message import EmailMessage
 
 
+def build_reply_subject(original_subject: str) -> str:
+    """
+    Build a clean reply subject while preserving Gmail threading.
+    """
+    subject = original_subject.strip()
+
+    if subject.lower().startswith("re:"):
+        subject = subject[3:].strip()
+
+    return f"Re: {subject} — Clarification Required"
+
+
 def send_reply(
     *,
     service,
@@ -14,13 +26,13 @@ def send_reply(
     thread_id: str | None = None,
 ):
     """
-    Sends a clarification reply in the same Gmail thread.
-    Gmail automatically handles 'Re:'.
+    Sends a system-generated reply in the same Gmail thread.
+    Subject should already be normalized before calling.
     """
 
     message = EmailMessage()
     message["To"] = to
-    message["Subject"] = subject               # ❌ NO manual "Re:"
+    message["Subject"] = subject   # ✅ Explicit, normalized subject
     message["In-Reply-To"] = in_reply_to
     message["References"] = in_reply_to
 
@@ -33,7 +45,6 @@ def send_reply(
 
     payload = {"raw": raw}
 
-    # Only include threadId if it exists
     if thread_id:
         payload["threadId"] = thread_id
 
@@ -45,4 +56,3 @@ def send_reply(
     except HttpError:
         logger.exception("Failed to send clarification reply")
         raise
-    

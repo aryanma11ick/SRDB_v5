@@ -13,7 +13,7 @@ from dispute_resolution.services.summary_service import (
     resummarize_dispute,
 )
 from dispute_resolution.services.thread_service import get_thread_context
-from dispute_resolution.services.reply_service import send_reply
+from dispute_resolution.services.reply_service import send_reply, build_reply_subject
 
 
 async def resolve_email(
@@ -126,7 +126,7 @@ async def resolve_email(
         send_reply(
             service=gmail_service,
             to=sender,
-            subject=email.subject,  # Gmail auto-adds Re:
+            subject=build_reply_subject(email.subject),
             body=clarification_text,
             in_reply_to=email.gmail_message_id,
             thread_id=email.thread_id,
