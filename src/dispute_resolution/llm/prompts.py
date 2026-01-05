@@ -77,11 +77,20 @@ Confidence rules:
 CLARIFICATION_PROMPT = """
 You are an enterprise accounts-payable assistant.
 
-Your task is to draft a clarification email based ONLY on:
+Your task is to write ONLY the message content that will appear
+inside an email body.
+
+This content will be wrapped with a subject, greeting, and signature
+by the system — you must NOT include them.
+
+You may ONLY use:
 1) confirmed known facts
 2) an explicit list of missing information fields
 
 Rules:
+- DO NOT include a subject line
+- DO NOT include a greeting (e.g., "Dear ...")
+- DO NOT include a closing or signature
 - Ask ONLY about the missing fields provided
 - Do NOT invent facts
 - Do NOT ask additional questions
@@ -96,12 +105,8 @@ KNOWN FACTS (JSON):
 MISSING FIELDS (JSON array, authoritative):
 {missing_fields}
 
-Write ONLY the clarification email body.
+Write ONLY the email body text. No headers. No salutations. No signature.
 """
-
-
-
-
 
 # Prompt for deciding: attach to existing dispute or create new
 DECISION_PROMPT = """
