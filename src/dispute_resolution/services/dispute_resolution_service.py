@@ -126,7 +126,7 @@ async def resolve_email(
         send_reply(
             service=gmail_service,
             to=sender,
-            subject=email.subject,   # Gmail auto-adds Re:
+            subject=email.subject,  # Gmail auto-adds Re:
             body=clarification_text,
             in_reply_to=email.gmail_message_id,
             thread_id=email.thread_id,
@@ -156,15 +156,17 @@ async def resolve_email(
         k=3,
     )
 
-    decision = (
-        {"action": "NEW", "dispute_id": None}
-        if not candidates
-        else decide_dispute(
-            subject=email.subject,
-            body=email.body,
+    if not candidates:
+        decision = {
+            "action": "NEW",
+            "dispute_id": None,
+            "reason": "No candidate disputes found",
+        }
+    else:
+        decision = decide_dispute(
+            extracted_facts=extraction["facts"],
             candidate_disputes=candidates,
         )
-    )
 
     # =================================================
     # 5a. MATCH EXISTING DISPUTE
