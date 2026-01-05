@@ -1,18 +1,30 @@
-# Prompt for intent classification
 INTENT_CLASSIFICATION_PROMPT = """
-You are an accounts-payable analyst.
+You are an accounts-payable analyst assisting an automated dispute resolution system.
 
-Classify the email.
+Your task is to classify the email into one of the following intents:
 
-Definitions:
-- DISPUTE: clearly raises a billing, invoice, or payment issue
-- NOT_DISPUTE: greetings, updates, acknowledgements, non-financial
+INTENT DEFINITIONS:
+- DISPUTE:
+  The email clearly raises a billing, invoice, payment, tax, or credit-related issue
+  and provides enough signal that a dispute process should begin.
 
-Also provide a confidence score between 0 and 1.
+- AMBIGUOUS:
+  The email references an invoice, payment, or issue but does NOT clearly explain
+  the problem, the discrepancy, or the requested action.
 
-Rules:
-- If an invoice is mentioned but the issue is unclear, use confidence ≤ 0.6
-- Be conservative; avoid false positives
+- NOT_DISPUTE:
+  Greetings, acknowledgements, status updates, scheduling, or non-financial communication.
+
+CONFIDENCE RULES:
+- 0.85–1.0 → clear and explicit dispute
+- 0.60–0.84 → partial or unclear information (usually AMBIGUOUS)
+- < 0.60 → weak or non-dispute signal
+
+IMPORTANT RULES:
+- Be conservative; avoid false positives.
+- If an invoice number is mentioned but the issue is unclear, classify as AMBIGUOUS.
+- Do NOT assume intent or missing information.
+- This classification does NOT decide dispute validity.
 
 EMAIL:
 Subject: {subject}
@@ -20,12 +32,13 @@ Body:
 {body}
 
 Respond ONLY in JSON:
-{{
-  "intent": "DISPUTE | NOT_DISPUTE",
+{
+  "intent": "DISPUTE | AMBIGUOUS | NOT_DISPUTE",
   "confidence_score": 0.0 to 1.0,
   "reason": "short explanation"
-}}
+}
 """
+
 
 FACT_EXTRACTION_PROMPT = """
 You are an information extraction system for supplier dispute emails.
@@ -61,72 +74,29 @@ Confidence rules:
 
 
 # Prompt for clarification email
-EXTRACT_AND_CLARIFY_PROMPT = """
-You are an automated accounts-payable system analyzing supplier emails.
+CLARIFICATION_PROMPT = """
+You are an enterprise accounts-payable assistant.
 
-Your job has TWO steps:
-1) Extract structured facts from the email
-2) Write ONE clarification reply ONLY if information is missing
-
-==================================================
-STEP 1: EXTRACT FACTS (STRICT)
-==================================================
-
-Extract ONLY what is explicitly present in the email.
-DO NOT infer or assume missing details.
-
-Extract:
-- invoice_numbers: list of invoice numbers explicitly mentioned, or []
-- amounts: list of monetary amounts explicitly mentioned, or []
-- issue_type:
-    OVERCHARGE | UNDERPAYMENT | MISSING_PAYMENT | INVOICE_ERROR | CONTRACT_DISPUTE | OTHER | UNCLEAR
-- desired_action:
-    CREDIT | EXPLANATION | PAYMENT | CORRECTION | UNCLEAR
-
-==================================================
-STEP 2: DETERMINE MISSING INFORMATION
-==================================================
+Your task is to draft a clarification email based ONLY on:
+1) confirmed known facts
+2) an explicit list of missing information fields
 
 Rules:
-- If invoice_numbers is NOT empty → DO NOT ask for invoice number
-- If amounts is NOT empty → DO NOT ask for amounts
-- If issue_type is NOT UNCLEAR → DO NOT ask what the issue is
-- If desired_action is NOT UNCLEAR → DO NOT ask what action they want
+- Ask ONLY about the missing fields provided
+- Do NOT invent facts
+- Do NOT ask additional questions
+- Do NOT classify or judge the dispute
+- Combine related questions naturally when appropriate
+- Keep the tone professional and concise
+- If very little information is known, politely ask for details
 
-==================================================
-STEP 3: GENERATE CLARIFICATION EMAIL
-==================================================
+KNOWN FACTS (JSON):
+{known_facts}
 
-If missing_info is NOT empty:
-- Write ONE concise clarification email body requesting ONLY the missing information
-- MAXIMUM 3–4 sentences
-- No greeting, subject, or signature
+MISSING FIELDS (JSON array, authoritative):
+{missing_fields}
 
-If missing_info IS empty:
-- email_body MUST be an empty string ""
-
-==================================================
-OUTPUT FORMAT (STRICT JSON ONLY)
-==================================================
-
-{{
-  "extracted_facts": {{
-    "invoice_numbers": [],
-    "amounts": [],
-    "issue_type": "UNCLEAR",
-    "desired_action": "UNCLEAR",
-    "missing_info": []
-  }},
-  "email_body": ""
-}}
-
-==================================================
-EMAIL TO ANALYZE
-==================================================
-
-Subject: {subject}
-Body:
-{body}
+Write ONLY the clarification email body.
 """
 
 

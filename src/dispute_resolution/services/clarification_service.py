@@ -1,48 +1,32 @@
+from typing import Dict, List, Any
 import json
-from typing import Any, Dict
+
 from dispute_resolution.llm.client import llm
-from dispute_resolution.llm.prompts import EXTRACT_AND_CLARIFY_PROMPT
 from dispute_resolution.utils.llm import normalize_llm_content
+from dispute_resolution.utils.logging import logger
+from dispute_resolution.llm.prompts import CLARIFICATION_PROMPT
 
 
-def extract_facts_and_clarification(subject: str, body: str) -> Dict[str, Any]:
+def build_clarification_email(
+    *,
+    known_facts: Dict[str, Any],
+    missing_fields: List[str],
+) -> str:
     """
-    Returns structured extraction + optional clarification email.
-
-    {
-      "facts": {
-        "invoice_numbers": [...],
-        "amounts": [...],
-        "issue_type": "...",
-        "desired_action": "...",
-        "missing_info": [...]
-      },
-      "email_body": "clarification text or empty string"
-    }
+    Generate an intelligent clarification email using LLM,
+    constrained strictly by extracted facts and missing fields.
     """
 
-    response = llm.invoke(
-        EXTRACT_AND_CLARIFY_PROMPT.format(subject=subject, body=body)
+    if not missing_fields:
+        logger.warning("Clarification requested but no missing fields provided")
+        return ""
+
+    prompt = CLARIFICATION_PROMPT.format(
+        known_facts=json.dumps(known_facts, indent=2),
+        missing_fields=json.dumps(missing_fields, indent=2),
     )
 
-    raw = normalize_llm_content(response.content).strip()
+    logger.info("Generating intelligent clarification email")
 
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        # SAFETY FALLBACK
-        return {
-            "facts": {
-                "invoice_numbers": [],
-                "amounts": [],
-                "issue_type": "UNCLEAR",
-                "desired_action": "UNCLEAR",
-                "missing_info": [],
-            },
-            "email_body": "",
-        }
-
-    return {
-        "facts": data.get("extracted_facts", {}),
-        "email_body": data.get("email_body", "").strip(),
-    }
+    response = llm.invoke(prompt)
+    return normalize_llm_content(response.content).strip()

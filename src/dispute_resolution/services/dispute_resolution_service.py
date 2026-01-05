@@ -3,11 +3,15 @@ from sqlalchemy import select
 
 from dispute_resolution.models import Email, Dispute
 from dispute_resolution.services.intent_service import classify_intent
-from dispute_resolution.services.clarification_service import extract_facts_and_clarification
+from dispute_resolution.services.fact_extraction_service import extract_facts
+from dispute_resolution.services.clarification_service import build_clarification_email
 from dispute_resolution.services.embedding_service import embed_email
 from dispute_resolution.services.vector_search_service import find_candidate_disputes
 from dispute_resolution.services.decision_service import decide_dispute
-from dispute_resolution.services.summary_service import generate_dispute_summary, resummarize_dispute
+from dispute_resolution.services.summary_service import (
+    generate_dispute_summary,
+    resummarize_dispute,
+)
 from dispute_resolution.services.thread_service import get_thread_context
 from dispute_resolution.services.reply_service import send_reply
 
@@ -29,7 +33,7 @@ async def resolve_email(
     """
 
     # =================================================
-    # 0. THREAD SHORT-CIRCUIT (already a dispute)
+    # 0. THREAD SHORT-CIRCUIT (already linked)
     # =================================================
     if email.thread_id:
         ctx = await get_thread_context(
@@ -67,14 +71,27 @@ async def resolve_email(
     await db.flush()
 
     # =================================================
-    # 2. NOT A DISPUTE
+    # 2. FACT EXTRACTION (ALWAYS RUNS)
+    # =================================================
+    extraction = extract_facts(
+        subject=email.subject,
+        body=email.body,
+    )
+
+    email.extracted_facts = extraction["facts"]
+    email.fact_confidence = extraction["confidence"]
+    email.missing_fields = extraction["missing_fields"]
+    await db.flush()
+
+    # =================================================
+    # 3. NOT A DISPUTE
     # =================================================
     if intent["intent"] == "NOT_DISPUTE":
         await db.commit()
         return None
 
     # =================================================
-    # 3. AMBIGUOUS → ALWAYS CLARIFY
+    # 4. AMBIGUOUS → CLARIFICATION
     # =================================================
     if intent["intent"] == "AMBIGUOUS":
 
@@ -93,29 +110,26 @@ async def resolve_email(
                     "reason": "Clarification already sent for this thread",
                 }
 
-        # ---- Extraction ONLY for wording ----
-        extraction = extract_facts_and_clarification(
-            subject=email.subject,
-            body=email.body,
+        clarification_text = build_clarification_email(
+            known_facts=extraction["facts"],
+            missing_fields=extraction["missing_fields"],
         )
 
-        clarification_text = extraction.get("email_body")
-
-        # Deterministic fallback (guaranteed)
+        # Hard safety fallback
         if not clarification_text:
             clarification_text = (
-                "We’ve reviewed your message and would like to understand "
-                "the issue in more detail. Please clarify what action you "
-                "would like us to take so we can proceed."
+                "Thank you for reaching out. To help us proceed, "
+                "could you please share additional details regarding "
+                "the invoice or issue you are referring to?"
             )
 
         send_reply(
             service=gmail_service,
             to=sender,
-            subject=f"Re: {email.subject}",
+            subject=email.subject,   # Gmail auto-adds Re:
             body=clarification_text,
-            thread_id=email.thread_id,
             in_reply_to=email.gmail_message_id,
+            thread_id=email.thread_id,
         )
 
         email.clarification_sent = True
@@ -123,11 +137,11 @@ async def resolve_email(
 
         return {
             "action": "CLARIFICATION_SENT",
-            "reason": "Intent ambiguous",
+            "reason": "Intent ambiguous; clarification requested",
         }
 
     # =================================================
-    # 4. DISPUTE PATH (ONLY FOR DISPUTE)
+    # 5. DISPUTE PATH (ONLY HERE WE EMBED)
     # =================================================
     email.embedding = embed_email(
         subject=email.subject,
@@ -153,7 +167,7 @@ async def resolve_email(
     )
 
     # =================================================
-    # 4a. MATCH EXISTING DISPUTE
+    # 5a. MATCH EXISTING DISPUTE
     # =================================================
     if decision["action"] == "MATCH":
         dispute_id = decision["dispute_id"]
@@ -170,8 +184,9 @@ async def resolve_email(
 
         await db.commit()
         return decision
+
     # =================================================
-    # 4b. CREATE NEW DISPUTE
+    # 5b. CREATE NEW DISPUTE
     # =================================================
     summary = generate_dispute_summary(
         subject=email.subject,
