@@ -14,6 +14,12 @@ from dispute_resolution.services.summary_service import (
 )
 from dispute_resolution.services.thread_service import get_thread_context
 from dispute_resolution.services.reply_service import send_reply, build_reply_subject
+from dispute_resolution.services.case_service import (
+    get_open_intake_case_by_thread,
+    create_intake_case,
+    mark_intake_waiting,
+    promote_intake_to_dispute
+)
 
 
 async def resolve_email(
@@ -33,7 +39,7 @@ async def resolve_email(
     """
 
     # =================================================
-    # 0. THREAD SHORT-CIRCUIT (already linked)
+    # 0. THREAD SHORT-CIRCUIT (already linked dispute)
     # =================================================
     if email.thread_id:
         ctx = await get_thread_context(
@@ -71,7 +77,7 @@ async def resolve_email(
     await db.flush()
 
     # =================================================
-    # 2. FACT EXTRACTION (ALWAYS RUNS)
+    # 2. FACT EXTRACTION (ALWAYS)
     # =================================================
     extraction = extract_facts(
         subject=email.subject,
@@ -91,11 +97,24 @@ async def resolve_email(
         return None
 
     # =================================================
-    # 4. AMBIGUOUS → CLARIFICATION
+    # 4. AMBIGUOUS → INTAKE CASE
     # =================================================
     if intent["intent"] == "AMBIGUOUS":
 
-        # ---- Thread-level guard ----
+        # find or create intake case
+        case = await get_open_intake_case_by_thread(
+            db=db,
+            supplier_id=email.supplier_id,
+            thread_id=email.thread_id,
+        )
+
+        if not case:
+            case = await create_intake_case(
+                db=db,
+                email=email,
+            )
+
+        # clarification already sent?
         if email.thread_id:
             existing = await db.execute(
                 select(Email).where(
@@ -112,15 +131,13 @@ async def resolve_email(
 
         clarification_text = build_clarification_email(
             known_facts=extraction["facts"],
-            missing_fields=extraction["missing_fields"],
+            missing_fields=extraction["missing_fields"][:2],
         )
 
-        # Hard safety fallback
         if not clarification_text:
             clarification_text = (
-                "Thank you for reaching out. To help us proceed, "
-                "could you please share additional details regarding "
-                "the invoice or issue you are referring to?"
+                "To help us proceed, could you please share the invoice number "
+                "and the billed amount related to this issue?"
             )
 
         send_reply(
@@ -133,16 +150,25 @@ async def resolve_email(
         )
 
         email.clarification_sent = True
-        await db.commit()
+        await mark_intake_waiting(case)
 
+        await db.commit()
         return {
             "action": "CLARIFICATION_SENT",
-            "reason": "Intent ambiguous; clarification requested",
+            "reason": "Ambiguous intake; clarification requested",
         }
 
     # =================================================
-    # 5. DISPUTE PATH (ONLY HERE WE EMBED)
+    # 5. DISPUTE PATH
     # =================================================
+
+    intake_case = await get_open_intake_case_by_thread(
+        db=db,
+        supplier_id=email.supplier_id,
+        thread_id=email.thread_id,
+    )
+    
+    # embed only for real disputes
     email.embedding = embed_email(
         subject=email.subject,
         body=email.body,
@@ -164,9 +190,11 @@ async def resolve_email(
         }
     else:
         decision = decide_dispute(
-            extracted_facts=extraction["facts"],
-            candidate_disputes=candidates,
-        )
+        subject=email.subject,
+        body=email.body,
+        extracted_facts=extraction["facts"],  # still used for hard match
+        candidate_disputes=candidates,
+    )
 
     # =================================================
     # 5a. MATCH EXISTING DISPUTE
@@ -179,9 +207,13 @@ async def resolve_email(
 
         dispute = await db.get(Dispute, dispute_id)
         if dispute:
-            await resummarize_dispute(
-                db=db,
-                dispute=dispute,
+            await resummarize_dispute(db=db, dispute=dispute)
+
+        # ---- PROMOTE INTAKE CASE IF EXISTS ----
+        if intake_case and intake_case.case_type == "INTAKE":
+            await promote_intake_to_dispute(
+                case=intake_case,
+                dispute_id=dispute_id,
             )
 
         await db.commit()
@@ -205,6 +237,14 @@ async def resolve_email(
     await db.flush()
 
     email.dispute_id = dispute.id
+
+    # ---- PROMOTE INTAKE CASE IF EXISTS ----
+    if intake_case and intake_case.case_type == "INTAKE":
+        await promote_intake_to_dispute(
+            case=intake_case,
+            dispute_id=dispute.id,
+        )
+
     await db.commit()
 
     return {

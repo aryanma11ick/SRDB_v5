@@ -41,6 +41,8 @@ def _invoice_overlap(
 
 def decide_dispute(
     *,
+    subject: str,
+    body: str,
     extracted_facts: Dict[str, Any],
     candidate_disputes: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
@@ -76,9 +78,18 @@ def decide_dispute(
     # =================================================
     # 2. FACT-BASED LLM TIE-BREAKER (SAFE)
     # =================================================
+    safe_candidates = [
+    {
+        "id": str(d["id"]),
+        "summary": d.get("summary", "")
+    }
+    for d in candidate_disputes
+]
+    
     prompt = DECISION_PROMPT.format(
-        extracted_facts=json.dumps(extracted_facts, indent=2),
-        disputes=json.dumps(candidate_disputes, indent=2),
+    disputes=json.dumps(safe_candidates, indent=2),
+    subject=subject,
+    body=body
     )
 
     logger.info("Calling LLM decision tie-breaker")

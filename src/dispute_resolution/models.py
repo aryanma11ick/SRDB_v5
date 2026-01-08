@@ -243,3 +243,82 @@ class ProcessedGmailMessage(Base):
         default=False,
         nullable=False,
     )
+
+
+
+class Case(Base):
+    __tablename__ = "cases"
+
+    # -----------------------------
+    # Primary key
+    # -----------------------------
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    # -----------------------------
+    # Ownership
+    # -----------------------------
+    supplier_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("suppliers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    thread_id: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        index=True,
+    )
+
+    # -----------------------------
+    # Lifecycle
+    # -----------------------------
+    case_type: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,   # INTAKE | DISPUTE
+    )
+
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,   # lifecycle state
+    )
+
+    # -----------------------------
+    # Links
+    # -----------------------------
+    intake_email_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("emails.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    dispute_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("disputes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # -----------------------------
+    # Timestamps
+    # -----------------------------
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    # -----------------------------
+    # Relationships (optional but useful)
+    # -----------------------------
+    supplier = relationship("Supplier", lazy="joined")
+    intake_email = relationship("Email", foreign_keys=[intake_email_id])
+    dispute = relationship("Dispute", foreign_keys=[dispute_id])
