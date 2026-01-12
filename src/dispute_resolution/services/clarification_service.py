@@ -5,6 +5,7 @@ from dispute_resolution.llm.client import llm
 from dispute_resolution.utils.llm import normalize_llm_content
 from dispute_resolution.utils.logging import logger
 from dispute_resolution.llm.prompts import CLARIFICATION_PROMPT
+from dispute_resolution.models import Email
 
 from datetime import datetime, timezone, timedelta
 
