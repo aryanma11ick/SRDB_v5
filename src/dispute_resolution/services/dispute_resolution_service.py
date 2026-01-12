@@ -101,28 +101,15 @@ async def resolve_email(
     # =================================================
     if intent["intent"] == "AMBIGUOUS":
 
-        # find or create intake case
-        case = await get_open_intake_case_by_thread(
-            db=db,
-            supplier_id=email.supplier_id,
-            thread_id=email.thread_id,
-        )
-
-        if not case:
-            case = await create_intake_case(
-                db=db,
-                email=email,
-            )
-
-        # clarification already sent?
+    # Do not resend clarification in same thread
         if email.thread_id:
             existing = await db.execute(
-                select(Email).where(
+                select(Email.id).where(
                     Email.thread_id == email.thread_id,
                     Email.clarification_sent.is_(True),
                 )
             )
-            if existing.scalars().first():
+            if existing.scalar_one_or_none():
                 await db.commit()
                 return {
                     "action": "WAITING",
@@ -134,12 +121,6 @@ async def resolve_email(
             missing_fields=extraction["missing_fields"][:2],
         )
 
-        if not clarification_text:
-            clarification_text = (
-                "To help us proceed, could you please share the invoice number "
-                "and the billed amount related to this issue?"
-            )
-
         send_reply(
             service=gmail_service,
             to=sender,
@@ -150,13 +131,13 @@ async def resolve_email(
         )
 
         email.clarification_sent = True
-        await mark_intake_waiting(case)
-
         await db.commit()
+
         return {
             "action": "CLARIFICATION_SENT",
-            "reason": "Ambiguous intake; clarification requested",
+            "reason": "Awaiting clarification from supplier",
         }
+
 
     # =================================================
     # 5. DISPUTE PATH

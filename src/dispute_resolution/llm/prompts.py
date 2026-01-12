@@ -122,6 +122,11 @@ Rules:
 - Do NOT invent facts.
 - Base your decision only on the text provided.
 
+Return a similarity score:
+- 0.0 → completely unrelated
+- 0.5 → somewhat related but unclear
+- 1.0 → clearly the same dispute
+
 EXISTING DISPUTES:
 {disputes}
 
@@ -132,8 +137,7 @@ Body:
 
 Respond ONLY in valid JSON with this schema:
 {{
-  "action": "MATCH" or "NEW",
-  "dispute_id": "<dispute_id or null>",
+  "similarity_score": 0.0 to 1.0,
   "reason": "one short sentence"
 }}
 """
