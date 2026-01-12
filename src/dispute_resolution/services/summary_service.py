@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timezone
-
+from typing import Optional
 from dispute_resolution.models import Dispute, Email
 from dispute_resolution.services.embedding_service import embed_email
 from dispute_resolution.llm.client import llm
@@ -60,3 +60,31 @@ async def resummarize_dispute(
     dispute.updated_at = datetime.now(timezone.utc)
 
     await db.flush()
+
+def generate_dispute_summary_from_intake(
+    *,
+    invoice_number: str,
+    purchase_order_number: str,
+    amount: float,
+    currency: str,
+    reason: Optional[str] = None,
+) -> str:
+    """
+    Generate a canonical dispute summary using ONLY intake-level facts.
+
+    This summary is:
+    - Deterministic
+    - Stable across emails
+    - Safe from LLM hallucination
+    """
+
+    base = (
+        f"This dispute relates to invoice {invoice_number} against purchase order "
+        f"{purchase_order_number}, where an amount of {currency} {amount:,.2f} "
+        f"is being disputed."
+    )
+
+    if reason:
+        return f"{base} The supplier has indicated the following reason for the dispute: {reason}."
+
+    return base

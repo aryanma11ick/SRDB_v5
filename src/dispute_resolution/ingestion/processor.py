@@ -88,7 +88,12 @@ async def process_message(
         body=parsed["body"],
         gmail_message_id=gmail_id,
         thread_id=parsed.get("thread_id"),
+        received_at=parsed.get("received_at"),
     )
+
+    if not email.root_gmail_message_id:
+        email.root_gmail_message_id = email.gmail_message_id
+
     db.add(email)
     await db.flush()
 

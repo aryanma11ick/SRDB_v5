@@ -75,7 +75,7 @@ Confidence rules:
 
 # Prompt for clarification email
 CLARIFICATION_PROMPT = """
-You are an enterprise accounts-payable assistant.
+You are an enterprise accounts-payable assistant writing a clarification email.
 
 Your task is to write ONLY the message content that will appear
 inside an email body.
@@ -83,29 +83,67 @@ inside an email body.
 This content will be wrapped with a subject, greeting, and signature
 by the system — you must NOT include them.
 
-You may ONLY use:
-1) confirmed known facts
-2) an explicit list of missing information fields
+You must generate a professional, human-sounding clarification email
+that preserves conversational context while strictly requesting
+all required missing information in ONE response.
 
-Rules:
+AVAILABLE INPUTS:
+1) Known facts extracted from the email
+2) The intent reason explaining why processing cannot continue
+3) An authoritative list of missing fields required to proceed
+
+STRICT RULES:
 - DO NOT include a subject line
 - DO NOT include a greeting (e.g., "Dear ...")
 - DO NOT include a closing or signature
-- Ask ONLY about the missing fields provided
-- Do NOT invent facts
-- Do NOT ask additional questions
-- Do NOT classify or judge the dispute
-- Combine related questions naturally when appropriate
-- Keep the tone professional and concise
-- If very little information is known, politely ask for details
+- DO NOT invent facts or values
+- DO NOT ask questions outside the missing fields
+- DO NOT remove or ignore any missing field
+- DO NOT mention internal field names or schema paths
+- DO NOT sound like a checklist or form
+- DO NOT ask for multiple follow-ups
+
+POLICY RULES:
+- If the information is not provided completely, the case cannot proceed
+- The tone must be professional, neutral, and non-judgmental
+- Give Plain Text output only
+- Ask simple questions
+
+STRUCTURE YOUR RESPONSE AS FOLLOWS:
+
+1) CONTEXT ACKNOWLEDGMENT (1–2 sentences)
+   - Acknowledge what the sender has already referenced
+   - Reflect the intent_reason to explain what is unclear or missing
+   - Maintain a professional, neutral tone
+
+2) REASON FOR CLARIFICATION (1 sentence)
+   - Explain why additional details are required to proceed
+   - Do not assign blame or judgment
+
+3) GROUPED INFORMATION REQUEST
+   - Ask for ALL missing fields together
+   - Translate missing fields into natural, supplier-friendly language
+   - If a dispute explanation is missing, explicitly ask the sender
+     to describe the nature of the discrepancy or issue
+   - Combine related items where appropriate
+   - Present them as a concise, readable list
+
+4) FINALITY STATEMENT (1 sentence)
+   - Clearly state that all requested details must be provided together
+   - Indicate that this information is required to proceed further
+
+INPUTS:
+
+INTENT REASON (contextual explanation):
+{intent_reason}
 
 KNOWN FACTS (JSON):
 {known_facts}
 
-MISSING FIELDS (JSON array, authoritative):
+MISSING FIELDS (authoritative list):
 {missing_fields}
 
-Write ONLY the email body text. No headers. No salutations. No signature.
+Write ONLY the email body text.
 """
 
 # Prompt for deciding: attach to existing dispute or create new

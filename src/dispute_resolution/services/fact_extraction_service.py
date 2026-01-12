@@ -30,7 +30,7 @@ EMPTY_EXTRACTION: Dict[str, Any] = {
         },
         "issue": {
             "category": "UNKNOWN",
-            "description": "",
+            "description": "Invoice discrepancy",
         },
         "requested_action": {
             "type": "UNKNOWN",
