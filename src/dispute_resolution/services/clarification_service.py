@@ -6,6 +6,7 @@ from dispute_resolution.utils.llm import normalize_llm_content
 from dispute_resolution.utils.logging import logger
 from dispute_resolution.llm.prompts import CLARIFICATION_PROMPT
 
+from datetime import datetime, timezone, timedelta
 
 def build_clarification_email(
     *,
@@ -30,3 +31,12 @@ def build_clarification_email(
 
     response = llm.invoke(prompt)
     return normalize_llm_content(response.content).strip()
+
+
+def is_ambiguous_expired(email: Email) -> bool:
+    if not email.clarification_sent_at:
+        return False
+
+    return datetime.now(timezone.utc) > (
+        email.clarification_sent_at + timedelta(hours=24)
+    )

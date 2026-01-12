@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from datetime import datetime, timezone, timedelta
 
 from dispute_resolution.models import Email, Dispute
 from dispute_resolution.services.intent_service import classify_intent
@@ -14,12 +15,17 @@ from dispute_resolution.services.summary_service import (
 )
 from dispute_resolution.services.thread_service import get_thread_context
 from dispute_resolution.services.reply_service import send_reply, build_reply_subject
-from dispute_resolution.services.case_service import (
-    get_open_intake_case_by_thread,
-    create_intake_case,
-    mark_intake_waiting,
-    promote_intake_to_dispute
-)
+
+
+AMBIGUOUS_TTL_HOURS = 24
+
+
+def clarification_expired(sent_at: datetime | None) -> bool:
+    if not sent_at:
+        return False
+    return datetime.now(timezone.utc) > (
+        sent_at + timedelta(hours=AMBIGUOUS_TTL_HOURS)
+    )
 
 
 async def resolve_email(
@@ -77,7 +83,7 @@ async def resolve_email(
     await db.flush()
 
     # =================================================
-    # 2. FACT EXTRACTION (ALWAYS)
+    # 2. FACT EXTRACTION
     # =================================================
     extraction = extract_facts(
         subject=email.subject,
@@ -97,23 +103,27 @@ async def resolve_email(
         return None
 
     # =================================================
-    # 4. AMBIGUOUS → INTAKE CASE
+    # 4. AMBIGUOUS → SEND CLARIFICATION (TTL-SAFE)
     # =================================================
     if intent["intent"] == "AMBIGUOUS":
 
-    # Do not resend clarification in same thread
         if email.thread_id:
             existing = await db.execute(
-                select(Email.id).where(
+                select(Email)
+                .where(
                     Email.thread_id == email.thread_id,
                     Email.clarification_sent.is_(True),
                 )
+                .order_by(Email.received_at.desc())
+                .limit(1)
             )
-            if existing.scalar_one_or_none():
+            prev = existing.scalar_one_or_none()
+
+            if prev and not clarification_expired(prev.clarification_sent_at):
                 await db.commit()
                 return {
                     "action": "WAITING",
-                    "reason": "Clarification already sent for this thread",
+                    "reason": "Awaiting clarification (within TTL)",
                 }
 
         clarification_text = build_clarification_email(
@@ -131,25 +141,18 @@ async def resolve_email(
         )
 
         email.clarification_sent = True
-        await db.commit()
+        email.clarification_sent_at = datetime.now(timezone.utc)
 
+        await db.commit()
         return {
             "action": "CLARIFICATION_SENT",
             "reason": "Awaiting clarification from supplier",
         }
 
-
     # =================================================
-    # 5. DISPUTE PATH
+    # 5. DISPUTE PATH (STRONG SIGNAL ONLY)
     # =================================================
 
-    intake_case = await get_open_intake_case_by_thread(
-        db=db,
-        supplier_id=email.supplier_id,
-        thread_id=email.thread_id,
-    )
-    
-    # embed only for real disputes
     email.embedding = embed_email(
         subject=email.subject,
         body=email.body,
@@ -163,22 +166,22 @@ async def resolve_email(
         k=3,
     )
 
-    if not candidates:
+    if candidates:
+        decision = decide_dispute(
+            subject=email.subject,
+            body=email.body,
+            extracted_facts=extraction["facts"],
+            candidate_disputes=candidates,
+        )
+    else:
         decision = {
             "action": "NEW",
             "dispute_id": None,
             "reason": "No candidate disputes found",
         }
-    else:
-        decision = decide_dispute(
-        subject=email.subject,
-        body=email.body,
-        extracted_facts=extraction["facts"],  # still used for hard match
-        candidate_disputes=candidates,
-    )
 
     # =================================================
-    # 5a. MATCH EXISTING DISPUTE
+    # 5a. MATCH
     # =================================================
     if decision["action"] == "MATCH":
         dispute_id = decision["dispute_id"]
@@ -190,18 +193,11 @@ async def resolve_email(
         if dispute:
             await resummarize_dispute(db=db, dispute=dispute)
 
-        # ---- PROMOTE INTAKE CASE IF EXISTS ----
-        if intake_case and intake_case.case_type == "INTAKE":
-            await promote_intake_to_dispute(
-                case=intake_case,
-                dispute_id=dispute_id,
-            )
-
         await db.commit()
         return decision
 
     # =================================================
-    # 5b. CREATE NEW DISPUTE
+    # 5b. NEW DISPUTE
     # =================================================
     summary = generate_dispute_summary(
         subject=email.subject,
@@ -218,14 +214,6 @@ async def resolve_email(
     await db.flush()
 
     email.dispute_id = dispute.id
-
-    # ---- PROMOTE INTAKE CASE IF EXISTS ----
-    if intake_case and intake_case.case_type == "INTAKE":
-        await promote_intake_to_dispute(
-            case=intake_case,
-            dispute_id=dispute.id,
-        )
-
     await db.commit()
 
     return {

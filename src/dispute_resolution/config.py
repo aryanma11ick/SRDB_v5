@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gemma3:12b"
     EMBEDDING_MODEL: str = "bge-m3"
 
-    SYSTEM_EMAIL_ADDRESS: str
+    SYSTEM_EMAIL_ADDRESS: str = ""
 
     class Config:
         env_file = ".env"
